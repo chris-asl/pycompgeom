@@ -45,7 +45,6 @@ class DcelInputData:
         self.epsilon = 5.0
         # Bounding box data members
         self.min_x, self.min_y, self.max_x, self.max_y = None, None, None, None
-        self.min_x_vertex, self.min_y_vertex, self.max_x_vertex, self.max_y_vertex = None, None, None, None
 
     def vertex_already_added(self, vertex):
         """Checks if the given vertex is an already added one"""
@@ -69,16 +68,12 @@ class DcelInputData:
         """Updates the coordinates (min and max of x and y) to be used for the bounding box"""
         if vertex.x > self.max_x:
             self.max_x = vertex.x
-            self.max_x_vertex = vertex
         if vertex.y > self.max_y:
             self.max_y = vertex.y
-            self.max_y_vertex = vertex
         if vertex.x < self.min_x:
             self.min_x = vertex.x
-            self.min_x_vertex = vertex
         if vertex.y < self.min_y:
             self.min_y = vertex.y
-            self.min_y_vertex = vertex.y
 
     def handle_input(self, vertex, previous_vertex, add_segment):
         """Handles the input and does the bookkeeping on adding the vertices and edges"""
@@ -131,7 +126,6 @@ class DcelInputData:
                     if self.min_x is None and self.min_y is None and self.max_x is None and self.max_y is None:
                         self.min_x = self.max_x = vertex.x
                         self.min_y = self.max_y = vertex.y
-                        self.max_y_vertex = self.max_x_vertex = self.min_x_vertex = self.min_y_vertex = vertex
                     previous_vertex = self.handle_input(vertex, previous_vertex, True)
                 elif event.button == button_new_segment:
                     pos = window.cartesian(event.pos)
