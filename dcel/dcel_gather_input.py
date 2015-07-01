@@ -15,7 +15,7 @@ def similar_vertices(v1, v2, epsilon=5.0):
     :param epsilon: The maximum distance that tells if two vertices are the same
     :return: True if vertices are the same, False otherwise
     """
-    return sqrt((v1.x - v2.x)**2 + (v1.y - v2.y)**2) < epsilon
+    return sqrt((v1.x - v2.x)**2 + (v1.y - v2.y)**2) <= epsilon
 
 
 def similar_edges(e1, e2, epsilon):
@@ -43,8 +43,9 @@ class DcelInputData:
     def __init__(self):
         self.vertices, self.edges, self.v_edges, self.v_vertices = [], [], [], []
         self.epsilon = 5.0
-        # Bounding box data members
-        self.min_x, self.min_y, self.max_x, self.max_y = None, None, None, None
+        self.is_connected_graph = False
+        # Bounding box related data members
+        self.max_segment_length, self.min_x, self.min_y, self.max_x, self.max_y = 0, None, None, None, None
 
     def vertex_already_added(self, vertex):
         """Checks if the given vertex is an already added one"""
@@ -75,6 +76,34 @@ class DcelInputData:
         if vertex.y < self.min_y:
             self.min_y = vertex.y
 
+    def add_bounding_box_elements(self):
+        """Adds the new vertices and edges that were created from the addition of a bounding box"""
+        d = int(self.max_segment_length)
+        upper_left_v = Point2(self.min_x - d, self.max_y + d)
+        upper_right_v = Point2(self.max_x + d, self.max_y + d)
+        lower_left_v = Point2(self.min_x - d, self.min_y - d)
+        lower_right_v = Point2(self.max_x + d, self.min_y - d)
+        self.vertices += [upper_right_v, upper_left_v, lower_left_v, lower_right_v]
+        self.v_vertices += [VPoint2(upper_right_v), VPoint2(upper_left_v), VPoint2(lower_left_v), VPoint2(lower_right_v)]
+        # CASES NEEDED (VORONOI OR TRIANGULATION)
+        if not self.is_connected_graph:
+            # In the case that we don't have an edge whose endpoint is (inf) - (not a case of a Voronoi Diagram)
+            # Create the four new segments
+            tmp_segment = Segment2(upper_left_v, upper_right_v)
+            self.edges.append(tmp_segment)
+            self.v_edges.append(VSegment2(tmp_segment))
+            tmp_segment = Segment2(upper_left_v, lower_left_v)
+            self.edges.append(tmp_segment)
+            self.v_edges.append(VSegment2(tmp_segment))
+            tmp_segment = Segment2(lower_left_v, lower_right_v)
+            self.edges.append(tmp_segment)
+            self.v_edges.append(VSegment2(tmp_segment))
+            tmp_segment = Segment2(lower_right_v, upper_right_v)
+            self.edges.append(tmp_segment)
+            self.v_edges.append(VSegment2(tmp_segment))
+        else:
+            pass
+
     def handle_input(self, vertex, previous_vertex, add_segment):
         """Handles the input and does the bookkeeping on adding the vertices and edges"""
         if len(self.vertices) > 0:
@@ -86,6 +115,9 @@ class DcelInputData:
                 #   2. The previous and current vertices aren't the same
                 if not similar_vertices(previous_vertex, vertex_result[1]):
                     edge = Segment2(previous_vertex, vertex_result[1])
+                    edge_length = edge.length()
+                    if edge_length > self.max_segment_length:
+                        self.max_segment_length = edge_length
                     if self.edge_already_added(edge) is False:
                         self.edges.append(edge)
                         self.v_edges.append(VSegment2(self.edges[-1]))
@@ -105,7 +137,17 @@ class DcelInputData:
             return vertex
 
     def get_visual_dcel_members(self, button_in=LEFTBUTTON, button_new_segment=MIDDLEBUTTON, button_exit=RIGHTBUTTON):
-        """Gathers all the necessary data (vertices, edges) for the Doubly Connected Edge List data structure"""
+        """
+        Gathers all the necessary data (vertices, edges) for the Doubly Connected Edge List data structure
+        :param button_in: The input button [default is LMB]
+        :param button_new_segment: The new segment button (not in sequence with the previous one) [default is MMB]
+        :param button_exit: The exit button [default is RMB]
+        :return: Returns a tuple (vertices, edges, min_max_coords_tuple, bounding box distance)
+                1. vertices and edges, are tuples in this format (actual_object, visual_object)
+                2. min_max_coords_tuple contains the min/max{x/y} coordinates and has this format:
+                        (min_x, min_y, max_x, max_y)
+                3. bounding box distance: Is the distance which was added from the main shape (min/max{x/y}) coordinates
+        """
         # Boilerplate code for adding some descriptive text
         pygame.display.set_caption("Create a DCEL (no intersections with the edges)")
         my_font = pygame.font.SysFont(None, 22)
@@ -132,9 +174,11 @@ class DcelInputData:
                     previous_vertex = vertex = Point2.from_tuple(pos)
                     self.handle_input(vertex, previous_vertex, False)
                 elif event.button == button_exit:
+                    self.add_bounding_box_elements()
                     vert = (self.vertices, self.v_vertices)
                     edg = (self.edges, self.v_edges)
-                    return vert, edg
+                    min_max_coords_tuple = (self.min_x, self.min_y, self.max_x, self.max_y)
+                    return vert, edg, min_max_coords_tuple, self.max_segment_length
                 elif not should_i_quit(event):
                     event = None
 
@@ -146,7 +190,7 @@ class DcelInputData:
 
 if __name__ == '__main__':
     dcel_data = DcelInputData()
-    vertices_pack, edges_pack = dcel_data.get_visual_dcel_members()
+    vertices_pack, edges_pack, min_max_coords_tuple, bb_dist = dcel_data.get_visual_dcel_members()
     print dcel_data
     pause()
     del vertices_pack, edges_pack, dcel_data
