@@ -38,12 +38,66 @@ def similar_edges(e1, e2, epsilon):
     else:
         return False
 
+def segment_double_repr(segment):
+    """Returns a 2-tuple representation of a segment to be used as a key for a dictionary of the CH segments
+
+    Format is as follows:
+        1. "(start.x,start.y)-(end.x,end.y)"
+        2. "(end.x,end.y)-(start.x,start.y)"
+    """
+    repr1 = str(segment.start.x) + "," + str(segment.start.y) + "-" + str(segment.end.x) + "," + str(segment.end.y)
+    repr2 = str(segment.end.x) + "," + str(segment.end.y) + "-" + str(segment.start.x) + "," + str(segment.start.y)
+    return repr1, repr2
+
+def add_segment_to_dict(p1, p2, ch_segments_dict):
+        """
+        Ads a segment to the dictionary of convex hull segments
+
+        :param p1: Point2 A point of the segment
+        :param p2: Point2 The other point of the segment
+        :param ch_segments_dict: Dictionary The dict that maps segment representation to Segment2 (Segments of the CH)
+        """
+        tmp_s = Segment2(p1, p2)
+        repr_tuple = segment_double_repr(tmp_s)
+        ch_segments_dict.update({repr_tuple[0]: tmp_s, repr_tuple[1]: tmp_s})
+
+def is_segment_of_ch(ch_segments_dict, segment):
+    """
+    Tests for membership of the segment in the convex hull segments
+    :param ch_segments_dict: The dictionary holding the convex hull segments
+    :param segment: The segment to be tested for membership
+    :return: True, on membership, False otherwise
+    """
+    s_repr = segment_double_repr(segment)
+    if s_repr[0] in ch_segments_dict or s_repr[1] in ch_segments_dict:
+        return True
+    else:
+        return False
+
+def get_segments_of_convex_hull(points):
+    """
+    Builds the convex hull of the point set given, and returns the CH segments in a dictionary
+
+    Algorithm used for convex hull: Andrew (Already implemented in pycompgeom.algorithms module)
+    The dictionary ############## ADD SOMETHING
+    N.B.: The points of the input MUST NOT include the BB points
+    :param points: list of Point2 objects
+    :return: Segments of the convex_hull in a dictionary (whose definition is described above)
+    """
+    ch_points = andrew(points)
+    ch_segments_dict = {}
+    for i in range(1, len(ch_points)):
+        add_segment_to_dict(ch_points[i - 1], ch_points[i], ch_segments_dict)
+    # Add latest segment
+    add_segment_to_dict(ch_points[len(ch_points) - 1], ch_points[0], ch_segments_dict)
+    return ch_segments_dict
 
 class DcelInputData:
     def __init__(self):
         self.vertices, self.edges, self.v_edges, self.v_vertices = [], [], [], []
         self.epsilon = 5.0
         self.is_connected_graph = True
+        self.ch_segments_dict = None
         # Bounding box related data members
         # bb_dist : Is the distance which is added to the main shape (min/max{x/y}) coordinates, so as to
         #           place the Bounding Box edges
@@ -89,7 +143,6 @@ class DcelInputData:
         lower_right_v = Point2(self.max_x + d, self.min_y - d)
         upper_right_v = Point2(self.max_x + d, self.max_y + d)
         upper_left_v = Point2(self.min_x - d, self.max_y + d)
-        print [upper_right_v, upper_left_v, lower_left_v, lower_right_v]
         self.vertices += [upper_right_v, upper_left_v, lower_left_v, lower_right_v]
         self.v_vertices += [VPoint2(upper_right_v), VPoint2(upper_left_v), VPoint2(lower_left_v), VPoint2(lower_right_v)]
         # CASES NEEDED (VORONOI OR TRIANGULATION)
@@ -181,6 +234,7 @@ class DcelInputData:
                     previous_vertex = vertex = Point2.from_tuple(pos)
                     self.handle_input(vertex, previous_vertex, False)
                 elif event.button == button_exit:
+                    self.ch_segments_dict = get_segments_of_convex_hull(self.vertices)
                     self.add_bounding_box_elements()
                     vert = (self.vertices, self.v_vertices)
                     edg = (self.edges, self.v_edges)
