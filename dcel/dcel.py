@@ -151,27 +151,80 @@ class DCEL:
         # self.most_ccw_edge(edges[0])
         # self.most_cw_edge(edges[0])
 
-    def find_edges_with_vertice(self, edge):
+    def add_to_half_edges_dicts(self, he):
+        """
+        Adds the given half-edge to the two dictionaries of half-edges belonging to the CH
+
+        The dictionaries are as follows:
+            1. key: origin of HE - value: HE with that origin -- used for setting next HE on the CH
+            2. key: destination of HE - value: HE with that destination -- used for setting previous HE on the CH
+        :param he: The half edge to be added to the dicts
+        """
+        self.ch_he_by_origin_dict[point_key_repr(he.origin.x, he.origin.y)] = he
+        self.ch_he_by_dest_dict[point_key_repr(he.twin.origin.x, he.twin.origin.y)] = he
+
+    @staticmethod
+    def find_segments_with_max_angle(segments):
+        """
+        Calculates the area between two segments, and returns the two which define the max area
+        :param segments: A list of Segment2 objects
+        :return: A tuple of two (2) Segment2 objects that define the max area from the given segments
+        """
+        if len(segments) <= 2:
+            return tuple(segments)
+        max_angle = 0
+        result = ()
+        for s_i in segments:
+            for s_j in segments:
+                if s_i == s_j:
+                    continue
+                angle = vectors_angle(s_i, s_j)
+                if angle > max_angle:
+                    max_angle = angle
+                    result = (s_i, s_j)
+        return result
+
+    def find_segments_with_point(self, p):
+        """Finds edges that have the given point p as a member (start or end)"""
+        result = []
+        for s in self.segments:
+            if s.start == p or s.end == p:
+                result.append(s)
+        return result
+
+    def find_connected_segments_with_segment(self, segment, connection_point):
+        """Populates a list with the edges that have the Point2 connection_point as a start/end"""
         res = []
-        for e in self.edges:
-            if not similar_edges(e, edge, 0) and (e.start == edge.end or e.end == edge.end):
+        for e in self.segments:
+            if not similar_edges(e, segment, 0) and (e.start == connection_point or e.end == connection_point):
                 res.append(e)
         return res
 
-    def most_ccw_edge(self, edge):
-        edges = self.find_edges_with_vertice(edge)
+    def most_ccw_segment(self, segment, connection_point):
+        """
+        Returns a segment that defines the minimum angle with the given segment
+
+        :param segment: Segment2 The segment that will act as a base for the other segments to be found
+        :param connection_point: Point2 The point of the segment that will be used for searching connected segments
+        :return:    The segment that:
+                        (i) is connected in CCW manner with the given one and
+                        (ii) defines the minimum angle with the given segment
+        """
+        edges = self.find_connected_segments_with_segment(segment, connection_point)
         min_angle = 2 * math.pi
         result = None
         for e in edges:
-            angle = vectors_angle(edge, e)
-            if ccw(edge.start, edge.end, e.end) and angle < min_angle:
+            angle = vectors_angle(segment, e)
+            if ccw(segment.start, segment.end, e.end) and angle < min_angle:
                 min_angle = angle
                 result = e
-        self.v_edges.append(VSegment2(result, RED))
+        self.v_segments.append(VSegment2(result, RED))
         return result
 
-    def most_cw_edge(self, edge):
-        edges = self.find_edges_with_vertice(edge)
+    def most_cw_segment(self, segment):
+        """Returns a segment that defines the minimum angle with the given segment
+        The segments are also connected in a CW manner"""
+        edges = self.find_connected_segments_with_segment(segment)
         min_angle = 2 * math.pi
         result = None
         for e in edges:
@@ -195,6 +248,16 @@ class DCEL:
                 result = e
         self.v_segments.append(VSegment2(result, BLUE))
         return result
+
+    def __del__(self):
+        del self.points
+        del self.points_dict
+        del self.segments
+        del self.v_points
+        del self.v_segments
+        del self.vertices
+        del self.half_edges
+        del self.faces
 
 
 def dot_product(v1, v2):
