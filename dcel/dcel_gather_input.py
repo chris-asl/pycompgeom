@@ -38,6 +38,7 @@ def similar_edges(e1, e2, epsilon):
     else:
         return False
 
+
 def segment_double_repr(segment):
     """Returns a 2-tuple representation of a segment to be used as a key for a dictionary of the CH segments
 
@@ -48,6 +49,7 @@ def segment_double_repr(segment):
     repr1 = str(segment.start.x) + "," + str(segment.start.y) + "-" + str(segment.end.x) + "," + str(segment.end.y)
     repr2 = str(segment.end.x) + "," + str(segment.end.y) + "-" + str(segment.start.x) + "," + str(segment.start.y)
     return repr1, repr2
+
 
 def add_segment_to_dict(p1, p2, ch_segments_dict):
         """
@@ -60,6 +62,7 @@ def add_segment_to_dict(p1, p2, ch_segments_dict):
         tmp_s = Segment2(p1, p2)
         repr_tuple = segment_double_repr(tmp_s)
         ch_segments_dict.update({repr_tuple[0]: tmp_s, repr_tuple[1]: tmp_s})
+
 
 def is_segment_of_ch(ch_segments_dict, segment):
     """
@@ -74,12 +77,14 @@ def is_segment_of_ch(ch_segments_dict, segment):
     else:
         return False
 
+
 def get_segments_of_convex_hull(points):
     """
     Builds the convex hull of the point set given, and returns the CH segments in a dictionary
 
     Algorithm used for convex hull: Andrew (Already implemented in pycompgeom.algorithms module)
-    The dictionary ############## ADD SOMETHING
+    The dictionary is a two keys -> one value (segment) connection, with the two keys being the two possible segment
+    representations, as defined in "def segment_double_repr"
     N.B.: The points of the input MUST NOT include the BB points
     :param points: list of Point2 objects
     :return: Segments of the convex_hull in a dictionary (whose definition is described above)
@@ -91,6 +96,7 @@ def get_segments_of_convex_hull(points):
     # Add latest segment
     add_segment_to_dict(ch_points[len(ch_points) - 1], ch_points[0], ch_segments_dict)
     return ch_segments_dict
+
 
 class DcelInputData:
     def __init__(self):
@@ -144,7 +150,8 @@ class DcelInputData:
         upper_right_v = Point2(self.max_x + d, self.max_y + d)
         upper_left_v = Point2(self.min_x - d, self.max_y + d)
         self.vertices += [upper_right_v, upper_left_v, lower_left_v, lower_right_v]
-        self.v_vertices += [VPoint2(upper_right_v), VPoint2(upper_left_v), VPoint2(lower_left_v), VPoint2(lower_right_v)]
+        self.v_vertices += [VPoint2(upper_right_v), VPoint2(upper_left_v),
+                            VPoint2(lower_left_v), VPoint2(lower_right_v)]
         # CASES NEEDED (VORONOI OR TRIANGULATION)
         if self.is_connected_graph:
             # In the case that we don't have an edge whose endpoint is (inf) - (not a case of a Voronoi Diagram)
@@ -188,7 +195,7 @@ class DcelInputData:
                 self.vertices.append(vertex)
                 self.v_vertices.append(VPoint2(self.vertices[-1]))
                 if len(self.vertices) > 1 and add_segment:
-                    self.edges.append(Segment2(previous_vertex,self. vertices[-1]))
+                    self.edges.append(Segment2(previous_vertex, self. vertices[-1]))
                     self.v_edges.append(VSegment2(self.edges[-1]))
                 return vertex
         else:
@@ -246,12 +253,13 @@ class DcelInputData:
     def __repr__(self):
         return "DCEL Data Members:\n\t[*] Segments: %s\n\t[*] Points: %s\n" \
                "\t[*] Min_x(%s),\tMax_x(%s)\n" \
-               "\t[*] Min_y(%s),\tMax_y(%s)\n" % (self.edges, self.vertices, self.min_x, self.max_x, self.min_y, self.max_y)
+               "\t[*] Min_y(%s),\tMax_y(%s)\n" % (self.edges, self.vertices, self.min_x, self.max_x, self.min_y,
+                                                  self.max_y)
 
 
 if __name__ == '__main__':
     dcel_data = DcelInputData()
-    vertices_pack, edges_pack, min_max_coords_tuple, bb_dist = dcel_data.get_visual_dcel_members()
+    vertices_pack, edges_pack, min_max_coords_tuple = dcel_data.get_visual_dcel_members()
     print dcel_data
     pause()
     del vertices_pack, edges_pack, dcel_data
