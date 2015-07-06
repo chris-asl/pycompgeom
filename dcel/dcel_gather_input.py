@@ -39,8 +39,8 @@ def similar_edges(e1, e2, epsilon):
         return False
 
 
-def segment_double_repr(segment):
-    """Returns a 2-tuple representation of a segment to be used as a key for a dictionary of the CH segments
+def segment_double_key_repr(segment):
+    """Returns a 2-tuple representation of a segment to be used as a key for a dictionary of the outer segments
 
     Format is as follows:
         1. "(start.x,start.y)-(end.x,end.y)"
@@ -51,59 +51,31 @@ def segment_double_repr(segment):
     return repr1, repr2
 
 
-def add_segment_to_dict(p1, p2, ch_segments_dict):
-        """
-        Ads a segment to the dictionary of convex hull segments
-
-        :param p1: Point2 A point of the segment
-        :param p2: Point2 The other point of the segment
-        :param ch_segments_dict: Dictionary The dict that maps segment representation to Segment2 (Segments of the CH)
-        """
-        tmp_s = Segment2(p1, p2)
-        repr_tuple = segment_double_repr(tmp_s)
-        ch_segments_dict.update({repr_tuple[0]: tmp_s, repr_tuple[1]: tmp_s})
-
-
-def is_segment_of_ch(ch_segments_dict, segment):
-    """
-    Tests for membership of the segment in the convex hull segments
-    :param ch_segments_dict: The dictionary holding the convex hull segments
-    :param segment: The segment to be tested for membership
-    :return: True, on membership, False otherwise
-    """
-    s_repr = segment_double_repr(segment)
-    if s_repr[0] in ch_segments_dict or s_repr[1] in ch_segments_dict:
-        return True
-    else:
-        return False
-
-
 def get_segments_of_convex_hull(points):
     """
-    Builds the convex hull of the point set given, and returns the CH segments in a dictionary
+    Builds the convex hull of the point set given, and returns the CH segments in a list
 
     Algorithm used for convex hull: Andrew (Already implemented in pycompgeom.algorithms module)
-    The dictionary is a two keys -> one value (segment) connection, with the two keys being the two possible segment
-    representations, as defined in "def segment_double_repr"
     N.B.: The points of the input MUST NOT include the BB points
     :param points: list of Point2 objects
-    :return: Segments of the convex_hull in a dictionary (whose definition is described above)
+    :return: List of segments of the convex_hull
     """
     ch_points = andrew(points)
-    ch_segments_dict = {}
+    ch_segments_list = []
     for i in range(1, len(ch_points)):
-        add_segment_to_dict(ch_points[i - 1], ch_points[i], ch_segments_dict)
+        ch_segments_list.append(Segment2(ch_points[i - 1], ch_points[i]))
     # Add latest segment
-    add_segment_to_dict(ch_points[len(ch_points) - 1], ch_points[0], ch_segments_dict)
-    return ch_segments_dict
+    ch_segments_list.append(Segment2(ch_points[len(ch_points) - 1], ch_points[0]))
+    return ch_segments_list
 
 
 class DcelInputData:
-    def __init__(self, bb_dist = 20):
+    def __init__(self, bb_dist=20):
         self.vertices, self.edges, self.v_edges, self.v_vertices = [], [], [], []
         self.epsilon = 5.0
         self.is_connected_graph = True
-        self.ch_segments_dict = None
+        self.ch_segments_list = None
+        self.segments_dict = {}
         # Bounding box related data members
         # bb_dist : Is the distance which is added to the main shape (min/max{x/y}) coordinates, so as to
         #           place the Bounding Box edges
@@ -125,10 +97,17 @@ class DcelInputData:
     def edge_already_added(self, edge):
         """Checks if the given edge is an already added one"""
         is_similar = False
-        for e in self.edges:
-            if similar_edges(edge, e, self.epsilon):
-                is_similar = True
-        return is_similar
+        if self.epsilon != 0:
+            for e in self.edges:
+                if similar_edges(edge, e, self.epsilon):
+                    is_similar = True
+            return is_similar
+        else:
+            s_repr = segment_double_key_repr(edge)
+            if s_repr[0] in self.segments_dict or s_repr[1] in self.segments_dict:
+                return True
+            else:
+                return False
 
     def update_bounding_box_members(self, vertex):
         """Updates the coordinates (min and max of x and y) to be used for the bounding box"""
@@ -184,6 +163,8 @@ class DcelInputData:
                     edge = Segment2(previous_vertex, vertex_result[1])
                     if self.edge_already_added(edge) is False:
                         self.edges.append(edge)
+                        repr_tuple = segment_double_key_repr(edge)
+                        self.segments_dict.update({repr_tuple[0]: edge, repr_tuple[1]: edge})
                         self.v_edges.append(VSegment2(self.edges[-1]))
                 return vertex_result[1]
             else:
@@ -191,8 +172,11 @@ class DcelInputData:
                 self.vertices.append(vertex)
                 self.v_vertices.append(VPoint2(self.vertices[-1]))
                 if len(self.vertices) > 1 and add_segment:
-                    self.edges.append(Segment2(previous_vertex, self. vertices[-1]))
-                    self.v_edges.append(VSegment2(self.edges[-1]))
+                    edge = Segment2(previous_vertex, self. vertices[-1])
+                    self.edges.append(edge)
+                    repr_tuple = segment_double_key_repr(edge)
+                    self.segments_dict.update({repr_tuple[0]: edge, repr_tuple[1]: edge})
+                    self.v_edges.append(VSegment2(edge))
                 return vertex
         else:
             self.update_bounding_box_members(vertex)
@@ -241,7 +225,7 @@ class DcelInputData:
                         raise ValueError("#vertices must be >= 3")
                     if len(self.edges) < 3:
                         raise ValueError("#edges must be >= 3")
-                    self.ch_segments_dict = get_segments_of_convex_hull(self.vertices)
+                    self.ch_segments_list = get_segments_of_convex_hull(self.vertices)
                     self.add_bounding_box_elements()
                     vert = (self.vertices, self.v_vertices)
                     edg = (self.edges, self.v_edges)
