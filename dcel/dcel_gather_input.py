@@ -99,7 +99,7 @@ def get_segments_of_convex_hull(points):
 
 
 class DcelInputData:
-    def __init__(self):
+    def __init__(self, bb_dist = 20):
         self.vertices, self.edges, self.v_edges, self.v_vertices = [], [], [], []
         self.epsilon = 5.0
         self.is_connected_graph = True
@@ -107,7 +107,7 @@ class DcelInputData:
         # Bounding box related data members
         # bb_dist : Is the distance which is added to the main shape (min/max{x/y}) coordinates, so as to
         #           place the Bounding Box edges
-        self.bb_dist, self.min_x, self.min_y, self.max_x, self.max_y = 0, None, None, None, None
+        self.bb_dist, self.min_x, self.min_y, self.max_x, self.max_y = bb_dist, None, None, None, None
         # Counter for the number of edges that were created from the addition of the BB
         # Not always 4 (case of connected graph)
         self.bb_edges_number = 0
@@ -143,7 +143,6 @@ class DcelInputData:
 
     def add_bounding_box_elements(self):
         """Adds the new vertices and edges that were created from the addition of a bounding box"""
-        self.bb_dist = int(self.bb_dist) + 1
         d = self.bb_dist
         lower_left_v = Point2(self.min_x - d, self.min_y - d)
         lower_right_v = Point2(self.max_x + d, self.min_y - d)
@@ -183,9 +182,6 @@ class DcelInputData:
                 #   2. The previous and current vertices aren't the same
                 if not similar_vertices(previous_vertex, vertex_result[1]):
                     edge = Segment2(previous_vertex, vertex_result[1])
-                    edge_length = edge.length()
-                    if edge_length > self.bb_dist:
-                        self.bb_dist = edge_length
                     if self.edge_already_added(edge) is False:
                         self.edges.append(edge)
                         self.v_edges.append(VSegment2(self.edges[-1]))
@@ -241,6 +237,10 @@ class DcelInputData:
                     previous_vertex = vertex = Point2.from_tuple(pos)
                     self.handle_input(vertex, previous_vertex, False)
                 elif event.button == button_exit:
+                    if len(self.vertices) < 3:
+                        raise ValueError("#vertices must be >= 3")
+                    if len(self.edges) < 3:
+                        raise ValueError("#edges must be >= 3")
                     self.ch_segments_dict = get_segments_of_convex_hull(self.vertices)
                     self.add_bounding_box_elements()
                     vert = (self.vertices, self.v_vertices)
@@ -258,7 +258,7 @@ class DcelInputData:
 
 
 if __name__ == '__main__':
-    dcel_data = DcelInputData()
+    dcel_data = DcelInputData(20)
     vertices_pack, edges_pack, min_max_coords_tuple = dcel_data.get_visual_dcel_members()
     print dcel_data
     pause()
