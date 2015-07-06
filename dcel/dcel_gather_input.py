@@ -229,10 +229,6 @@ class DcelInputData:
                         raise ValueError("#edges must be >= 3")
                     self.ch_segments_list = get_segments_of_convex_hull(self.vertices)
                     self.add_bounding_box_elements()
-                    vert = (self.vertices, self.v_vertices)
-                    edg = (self.edges, self.v_edges)
-                    min_max_coords_tuple = (self.min_x, self.min_y, self.max_x, self.max_y)
-                    return vert, edg, min_max_coords_tuple
                 elif not should_i_quit(event):
                     event = None
 
@@ -245,7 +241,12 @@ class DcelInputData:
     @staticmethod
     def unpickle_dcel_data(filename):
         with file(filename, 'rb') as input_file:
-            return pickle.load(input_file)
+            dcel_data_obj = pickle.load(input_file)
+            # Re-"paint" all the visual objects
+            dcel_data_obj.v_vertices = [VPoint2(v) for v in dcel_data_obj.vertices]
+            dcel_data_obj.v_edges = [VSegment2(e) for e in dcel_data_obj.edges]
+            return dcel_data_obj
+
 
     def __repr__(self):
         return "DCEL Data Members:\n\t[*] Segments: %s\n\t[*] Points: %s\n" \
@@ -256,10 +257,10 @@ class DcelInputData:
 
 if __name__ == '__main__':
     dcel_data = DcelInputData(20)
-    vertices_pack, edges_pack, min_max_coords_tuple = dcel_data.get_visual_dcel_members()
+    dcel_data.get_visual_dcel_members()
     print dcel_data
     dcel_data.pickle_dcel_data("test")
     dcel_test = DcelInputData.unpickle_dcel_data("test")
     print dcel_test
     pause()
-    del vertices_pack, edges_pack, dcel_data
+    del dcel_data
