@@ -3,7 +3,9 @@
 __author__ = 'Chris Aslanoglou'
 from pycompgeom import *
 from math import sqrt
-
+import pickle
+from time import time
+from datetime import datetime
 
 def similar_vertices(v1, v2, epsilon=5.0):
     """
@@ -234,6 +236,17 @@ class DcelInputData:
                 elif not should_i_quit(event):
                     event = None
 
+    def pickle_dcel_data(self, filename=None):
+        if filename is None:
+            filename = "dcel_input_data-" + datetime.fromtimestamp(time()).strftime('%Y-%m-%d,%H:%M:%S') + ".bin"
+        with open(filename, 'wb') as output_file:
+            pickle.dump(self, output_file)
+
+    @staticmethod
+    def unpickle_dcel_data(filename):
+        with file(filename, 'rb') as input_file:
+            return pickle.load(input_file)
+
     def __repr__(self):
         return "DCEL Data Members:\n\t[*] Segments: %s\n\t[*] Points: %s\n" \
                "\t[*] Min_x(%s),\tMax_x(%s)\n" \
@@ -245,5 +258,8 @@ if __name__ == '__main__':
     dcel_data = DcelInputData(20)
     vertices_pack, edges_pack, min_max_coords_tuple = dcel_data.get_visual_dcel_members()
     print dcel_data
+    dcel_data.pickle_dcel_data("test")
+    dcel_test = DcelInputData.unpickle_dcel_data("test")
+    print dcel_test
     pause()
     del vertices_pack, edges_pack, dcel_data
