@@ -94,6 +94,7 @@ class DcelInputData:
             if similar_vertices(vertex, vert, self.epsilon):
                 is_similar = True
                 similar_vertex = vert
+                break
         return is_similar, similar_vertex
 
     def edge_already_added(self, edge):
@@ -192,10 +193,6 @@ class DcelInputData:
         :param button_in: The input button [default is LMB]
         :param button_new_segment: The new segment button (not in sequence with the previous one) [default is MMB]
         :param button_exit: The exit button [default is RMB]
-        :return: Returns a tuple (vertices, edges, min_max_coords_tuple)
-                1. vertices and edges, are tuples in this format (actual_object, visual_object)
-                2. min_max_coords_tuple contains the min/max{x/y} coordinates and has this format:
-                        (min_x, min_y, max_x, max_y)
         """
         # Boilerplate code for adding some descriptive text
         pygame.display.set_caption("Create a DCEL (no intersections with the edges)")
@@ -221,7 +218,7 @@ class DcelInputData:
                 elif event.button == button_new_segment:
                     pos = window.cartesian(event.pos)
                     previous_vertex = vertex = Point2.from_tuple(pos)
-                    self.handle_input(vertex, previous_vertex, False)
+                    previous_vertex = self.handle_input(vertex, previous_vertex, False)
                 elif event.button == button_exit:
                     if len(self.vertices) < 3:
                         raise ValueError("#vertices must be >= 3")
@@ -229,6 +226,7 @@ class DcelInputData:
                         raise ValueError("#edges must be >= 3")
                     self.ch_segments_list = get_segments_of_convex_hull(self.vertices)
                     self.add_bounding_box_elements()
+                    return
                 elif not should_i_quit(event):
                     event = None
 
@@ -247,7 +245,6 @@ class DcelInputData:
             dcel_data_obj.v_edges = [VSegment2(e) for e in dcel_data_obj.edges]
             return dcel_data_obj
 
-
     def __repr__(self):
         return "DCEL Data Members:\n\t[*] Segments: %s\n\t[*] Points: %s\n" \
                "\t[*] Min_x(%s),\tMax_x(%s)\n" \
@@ -259,8 +256,8 @@ if __name__ == '__main__':
     dcel_data = DcelInputData(20)
     dcel_data.get_visual_dcel_members()
     print dcel_data
-    dcel_data.pickle_dcel_data("test")
-    dcel_test = DcelInputData.unpickle_dcel_data("test")
+    dcel_data.pickle_dcel_data()
+    # dcel_test = DcelInputData.unpickle_dcel_data("")
     print dcel_test
     pause()
     del dcel_data
