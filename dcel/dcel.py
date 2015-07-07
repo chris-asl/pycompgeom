@@ -30,8 +30,8 @@ class HalfEdge(Segment2):
     def set_next(self, he):
         """Sets the next HE of the current one.
         Also, sets the previous of the given one"""
-        # if self.next is not None:
-        #     raise ValueError("HalfEdge - set_next: Next wasn't none - Possible attempt for erroneous overwrite")
+        if self.next is not None:
+            raise ValueError("HalfEdge - set_next: Next wasn't none - Possible attempt for erroneous overwrite")
         if type(he) is not HalfEdge:
             raise TypeError("HalfEdge - set_next: Expected type \"HalfEdge\", got \"" + str(type(he)) + "\"")
         self.next = he
@@ -40,8 +40,8 @@ class HalfEdge(Segment2):
     def set_previous(self, he):
         """Sets the previous HE of the current one.
         Also, sets the next of the given one"""
-        # if self.previous is not None:
-        #     raise ValueError("HalfEdge - set_previous: Previous wasn't none - Possible attempt for erroneous overwrite")
+        if self.previous is not None:
+            raise ValueError("HalfEdge - set_previous: Previous wasn't none - Possible attempt for erroneous overwrite")
         if type(he) is not HalfEdge:
             raise TypeError("HalfEdge - set_previous: Expected type \"HalfEdge\", got \"" + str(type(he)) + "\"")
         self.previous = he
@@ -154,12 +154,13 @@ def point_key_repr(*args):
 
 def segment_key_repr(segment):
     if not isinstance(segment, Segment2):
-    # if type(segment) is not Segment2:
         raise TypeError("segment_key_repr: Expected type \"Segment2\" or \"HalfEdge\", got: " + str(type(segment)))
-    # if isinstance(segment, HalfEdge):
-    #     return str(segment.origin.x) + "," + str(segment.origin.y) + "-" + \
-    #            str(segment.twin.origin.x) + "," + str(segment.twin.origin.y)
     return str(segment.start.x) + "," + str(segment.start.y) + "-" + str(segment.end.x) + "," + str(segment.end.y)
+
+def he_key_repr(he):
+    if isinstance(he, HalfEdge):
+        return str(he.origin.x) + "," + str(he.origin.y) + "-" + \
+               str(he.twin.origin.x) + "," + str(he.twin.origin.y)
 # #########################################
 
 
@@ -188,9 +189,11 @@ class DCEL:
         # The following dictionaries help for finding the next and previous HalfEdges that are on the ConvexHull
         self.outer_he_by_origin_dict = {}  # Origin (x,y) -> Polygon outer HalfEdge with that origin
         self.outer_he_by_dest_dict = {}  # Dest (x,y) -> Polygon outer HalfEdge with that destination
-        # The following dictionaries help for finding if a vertex is already created
+        # The following dictionaries help for finding if a vertex or half-edge is already created
         self.vertices_dict = {}  # (x,y) -> Vertex
-        self.half_edges_dict = {}  # Origin -> HalfEdge
+        self.half_edges_dict = {}  # (he.start, he.end) -> HE - This means only one representation for each HE pair
+        # The following dict, helps for discarding an already created half-edge
+        self.visited_inner_he_dict = {}  # (origin, twin.origin) -> HE
         # Data members of DCEL
         self.vertices = []
         self.half_edges = []
@@ -227,15 +230,15 @@ class DCEL:
                 new_he_list = self.new_face_handling(starting_he)
                 if len(new_he_list) > 0:
                     starting_he_list += new_he_list
-                    # Before adding, check if any of the new half-edges are already created
-                    # for he in new_he_list:
-                    #     s_repr = segment_key_repr(he)
-                    #     if s_repr not in self.half_edges_dict:
-                    #         starting_he_list.append(he)
                 # Select next starting_he
                 if len(starting_he_list) > 0:
-                    starting_he = starting_he_list[0]
-                    starting_he_list.remove(starting_he)
+                    # Before actually selecting the next starting he
+                    # Check if the HE candidate has been already visited
+                    starting_he_list = [he for he in starting_he_list
+                                        if he_key_repr(he) not in self.visited_inner_he_dict]
+                    if len(starting_he_list) > 0:
+                        starting_he = starting_he_list.pop(0)
+
                 else:
                     print "NO HALF_EDGES TO GO ON - Stopping algorithm"
 
@@ -356,9 +359,15 @@ class DCEL:
         """
         # Create DCEL vertices and half-edges only if they don't already exist
         origin_v, did_create_origin = self.create_or_get_vertex(origin)
-        twin_origin_v, did_create_twin_origin = self.create_or_get_vertex(new_segment.start if new_segment.start != origin else new_segment.end)
+        twin_origin_v, did_create_twin_origin = self.create_or_get_vertex(new_segment.start
+                                                                          if new_segment.start != origin
+                                                                          else new_segment.end)
         inner_he, outer_he, did_create_he = self.create_or_get_half_edges(new_segment, origin_v, twin_origin_v)
         inner_he.set_previous(prev_he)
+
+        # Add to visited inner half-edges dict for discarding another starting half-edge that belongs to
+        # an already visited face
+        self.visited_inner_he_dict[he_key_repr(inner_he)] = inner_he
 
         next_starting_he = None
         # In case, new HEs have been created, we need to check the outer HE
