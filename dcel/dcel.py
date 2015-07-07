@@ -238,12 +238,16 @@ class DCEL:
                                         if he_key_repr(he) not in self.visited_inner_he_dict]
                     if len(starting_he_list) > 0:
                         starting_he = starting_he_list.pop(0)
-
-                else:
-                    print "NO HALF_EDGES TO GO ON - Stopping algorithm"
+                    else:
+                        starting_he = None
 
                 # Algorithm termination, #(half-edges) = 2 * #segments - 4 (4 segments of the BB have only 1 half-edge)
-                if len(self.half_edges) == 2 * len(self.segments) - 4:
+                # if len(self.half_edges) == 2 * len(self.segments) - 4:
+                if len(self.visited_inner_he_dict) + len(self.outer_segments_dict) / 2 \
+                        == 2 * (len(self.segments) - self.bb_segments_number):
+                    break
+                elif len(starting_he_list) == 0 and starting_he is None:
+                    print "NO HALF_EDGES TO GO ON - Stopping algorithm"
                     break
         else:
             # Disconnected graph case (Voronoi representation)
@@ -323,7 +327,6 @@ class DCEL:
             tmp_s = VSegment2(starting_he, RED)
             # print starting_he
             while idx_vertex != starting_he.origin:
-                print "Walking on the face"
                 # Find most CCW segment
                 next_segment = self.min_angle_ccw_segment(idx_he, idx_vertex)
                 if next_segment is None:
@@ -339,6 +342,8 @@ class DCEL:
                 # DCEL.draw_half_edge(idx_he)
             # Set up relationship between latest and first half-edges
             starting_he.set_previous(idx_he)
+            # Add starting_he into the visited half-edges dictionary
+            self.visited_inner_he_dict[he_key_repr(starting_he)] = starting_he
             # DCEL.draw_half_edge(idx_he)
             # DCEL.draw_half_edge(starting_he)
         else:
@@ -399,9 +404,6 @@ class DCEL:
         if did_create_twin_origin:
             self.vertices.append(twin_origin_v)
         if did_create_he:
-            # Adding the inner half-edge to the end is IMPORTANT! As it's used for:
-            # 1. Setting the previous of the next HE, above in this method
-            # 2. Updating the current vertex in the current face cycle, for stopping the cycle
             self.half_edges += [outer_he, inner_he]
 
         return next_starting_he, inner_he
@@ -519,9 +521,7 @@ class DCEL:
             raise ValueError("DCEL Construction - Connected-graph case: Starting edges don't have a "
                              "common point")
 
-        # TESTING
-        # print common_point
-        # print segment_with_min_y
+        # Testing
         tmp_p = VPoint2(common_point, RED)
         tmp_s = VSegment2(segment_with_min_y, GREEN)
 
