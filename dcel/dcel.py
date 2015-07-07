@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 __author__ = 'Chris Aslanoglou'
 from pycompgeom.visuals import *
-from dcel_gather_input import DcelInputData, similar_edges, is_segment_of_ch
-
+from dcel_gather_input import DcelInputData, similar_edges, segment_double_key_repr, get_segments_of_convex_hull
+import pickle
 
 class HalfEdge(Segment2):
     def __init__(self, origin, segment):
@@ -30,8 +30,8 @@ class HalfEdge(Segment2):
     def set_next(self, he):
         """Sets the next HE of the current one.
         Also, sets the previous of the given one"""
-        if self.next is not None:
-            raise ValueError("HalfEdge - set_next: Next wasn't none - Possible attempt for erroneous overwrite")
+        # if self.next is not None:
+        #     raise ValueError("HalfEdge - set_next: Next wasn't none - Possible attempt for erroneous overwrite")
         if type(he) is not HalfEdge:
             raise TypeError("HalfEdge - set_next: Expected type \"HalfEdge\", got \"" + str(type(he)) + "\"")
         self.next = he
@@ -40,8 +40,8 @@ class HalfEdge(Segment2):
     def set_previous(self, he):
         """Sets the previous HE of the current one.
         Also, sets the next of the given one"""
-        if self.previous is not None:
-            raise ValueError("HalfEdge - set_previous: Previous wasn't none - Possible attempt for erroneous overwrite")
+        # if self.previous is not None:
+        #     raise ValueError("HalfEdge - set_previous: Previous wasn't none - Possible attempt for erroneous overwrite")
         if type(he) is not HalfEdge:
             raise TypeError("HalfEdge - set_previous: Expected type \"HalfEdge\", got \"" + str(type(he)) + "\"")
         self.previous = he
@@ -93,7 +93,7 @@ class Face:
         if type(outer_component) is not HalfEdge:
             raise TypeError("Face - __init__: Expected type \"HalfEdge\", got \"" + str(type(outer_component)) + "\"")
         self.outer_component = outer_component
-        self.inner_component = None
+        self.inner_components = None
 
     def set_inner_component(self, he):
         """
@@ -102,10 +102,12 @@ class Face:
         """
         if type(he) is not HalfEdge:
             raise TypeError("Face - set_inner_component: Expected type \"HalfEdge\", got \"" + type(he) + "\"")
-        self.inner_component = he
+        if self.inner_components is None:
+            self.inner_components = []
+        self.inner_components.append(he)
 
     def __repr__(self):
-        return "Face [OuterComponent: %s, InnerComponent: %s]" % (self.outer_component, self.inner_component)
+        return "Face [OuterComponent: %s, InnerComponent: %s]" % (self.outer_component, self.inner_components)
 
     def walk_face(self):
         """Returns a list of HalfEdges that surround the face"""
@@ -119,7 +121,28 @@ class Face:
                 break
         return half_edges
 
+    def walk_inner_components(self):
+        """Returns a list of lists of HalfEdges for each inner component"""
+        if self.inner_components is None:
+            return None
+        else:
+            result = []
+            for ic in self.inner_components:
+                start_vertice = ic.origin
+                idx_edge = ic
+                half_edges = [idx_edge]
+                while True:
+                    idx_edge = idx_edge.next
+                    half_edges.append(idx_edge)
+                    if idx_edge.next.origin == start_vertice:
+                        break
+                result.append(half_edges)
+            return result
 
+
+# #########################################
+# Key representation of objects methods for dictionaries
+# #########################################
 def point_key_repr(*args):
     if len(args) == 2 and type(args) is tuple:
         return str(args[0]) + "," + str(args[1])
@@ -128,18 +151,25 @@ def point_key_repr(*args):
     else:
         raise TypeError("point_key_repr: Expected type \"tuple\" or \"Point2\", got: " + str(type(args)))
 
+
 def segment_key_repr(segment):
-    if type(segment) is not Segment2:
-        raise TypeError("segment_key_repr: Expected type \"Segment2\", got: " + str(type(segment)))
+    if not isinstance(segment, Segment2):
+    # if type(segment) is not Segment2:
+        raise TypeError("segment_key_repr: Expected type \"Segment2\" or \"HalfEdge\", got: " + str(type(segment)))
+    # if isinstance(segment, HalfEdge):
+    #     return str(segment.origin.x) + "," + str(segment.origin.y) + "-" + \
+    #            str(segment.twin.origin.x) + "," + str(segment.twin.origin.y)
     return str(segment.start.x) + "," + str(segment.start.y) + "-" + str(segment.end.x) + "," + str(segment.end.y)
+# #########################################
+
 
 class DCEL:
     def __init__(self, points, segments, is_connected_graph, min_max_coords_tuple, bb_dist, bb_segments_number,
-                 v_points, v_segments, ch_segments_dict):
+                 v_points, v_segments, ch_segments_list, segments_dict):
         # Data members from input
         self.points = points
         # Convert to points to dictionary from "x-coord,y-coord" -> Point2
-        self.points_dict = dict((k, v) for k, v in [(str(p.x) + "," + str(p.y), p) for p in points])
+        self.points_dict = dict((k, v) for k, v in [(point_key_repr(p), p) for p in points])
         self.segments = segments
         self.is_connected_graph = is_connected_graph
         self.min_x = min_max_coords_tuple[0]
@@ -150,13 +180,14 @@ class DCEL:
         self.bb_segments_number = bb_segments_number
         self.v_points = v_points
         self.v_segments = v_segments
-        self.ch_segment_dict = ch_segments_dict
         # This dictionary contains all the outer segments of the connected graph
         # (when the polygon is convex or non-convex)
         self.outer_segments_dict = {}
+        self.segments_dict = segments_dict  # Used for getting a next segment as a starting point for a new face
+        self.populate_outer_segments_dict(ch_segments_list, segments_dict)
         # The following dictionaries help for finding the next and previous HalfEdges that are on the ConvexHull
-        self.ch_he_by_origin_dict = {}  # Origin (x,y) -> HalfEdge on ConvexHull with that origin
-        self.ch_he_by_dest_dict = {}  # Dest (x,y) -> HalfEdge on ConvexHull with that destination
+        self.outer_he_by_origin_dict = {}  # Origin (x,y) -> Polygon outer HalfEdge with that origin
+        self.outer_he_by_dest_dict = {}  # Dest (x,y) -> Polygon outer HalfEdge with that destination
         # The following dictionaries help for finding if a vertex is already created
         self.vertices_dict = {}  # (x,y) -> Vertex
         self.half_edges_dict = {}  # Origin -> HalfEdge
@@ -164,7 +195,6 @@ class DCEL:
         self.vertices = []
         self.half_edges = []
         self.faces = []
-        # Testing
         self.construct_dcel()
 
     def __del__(self):
@@ -183,9 +213,7 @@ class DCEL:
     def construct_dcel(self):
         if self.is_connected_graph:
             # Case of connected graph (not Voronoi)
-            # POPULATE OUTER SEGMENTS OF CONNECTED GRAPH
             self.connected_graph_handle_bb_components()
-
             # Algorithm main loop
             # Main idea:    Creating faces by cycling around them (once you complete a circle, you have a new face)
             # Notes:        1. The starting point for each cycle is half-edge
@@ -196,12 +224,21 @@ class DCEL:
                 # The 1st half edge needs to be found manually as it isn't connected to the BB somehow
                 if len(self.faces) == 1:
                     starting_he = self.connected_graph_get_starting_edge()
-                new_segments_list = self.new_face_handling(starting_he)
-                if len(new_segments_list) > 0:
-                    starting_he_list += new_segments_list
-                    # Select next starting_he
+                new_he_list = self.new_face_handling(starting_he)
+                if len(new_he_list) > 0:
+                    starting_he_list += new_he_list
+                    # Before adding, check if any of the new half-edges are already created
+                    # for he in new_he_list:
+                    #     s_repr = segment_key_repr(he)
+                    #     if s_repr not in self.half_edges_dict:
+                    #         starting_he_list.append(he)
+                # Select next starting_he
+                if len(starting_he_list) > 0:
                     starting_he = starting_he_list[0]
                     starting_he_list.remove(starting_he)
+                else:
+                    print "NO HALF_EDGES TO GO ON - Stopping algorithm"
+
                 # Algorithm termination, #(half-edges) = 2 * #segments - 4 (4 segments of the BB have only 1 half-edge)
                 if len(self.half_edges) == 2 * len(self.segments) - 4:
                     break
@@ -234,14 +271,14 @@ class DCEL:
 
     @staticmethod
     def draw_half_edge(e):
-        points = [VPoint2(e.origin, GREEN)]
+        points = [VPoint2(e.origin, RED)]
         tmp = [VSegment2(e, RED)]
         if e.next is not None:
             tmp.append(VSegment2(e.next, MAGENTA))
-            points.append(VPoint2(e.next.origin, CYAN))
+            points.append(VPoint2(e.next.origin, MAGENTA))
         if e.previous is not None:
             tmp.append(VSegment2(e.previous, YELLOW))
-            points.append(VPoint2(e.previous.origin, RED))
+            points.append(VPoint2(e.previous.origin, YELLOW))
         pause()
 
     def test_vertices_incident_edges(self):
@@ -251,10 +288,19 @@ class DCEL:
 
     def test_visual_he_relationships(self):
         """Iterate through all the faces, iterating through their HEs, and drawing each one with its prev/next"""
-        for f in self.faces:
+        for i, f in enumerate(self.faces):
+            if i == 0:
+                print "Walking 1st face (BB)"
             face_he = f.walk_face()
             for he in face_he:
                 DCEL.draw_half_edge(he)
+            face_inner_he = f.walk_inner_components()
+            if face_inner_he is not None:
+                if i == 0:
+                    print "Walking inner components of 1st face"
+                for ic_pack in face_inner_he:
+                    for he in ic_pack:
+                        DCEL.draw_half_edge(he)
     # ##################################################
 
     def new_face_handling(self, starting_he):
@@ -276,9 +322,10 @@ class DCEL:
             while idx_vertex != starting_he.origin:
                 print "Walking on the face"
                 # Find most CCW segment
-                next_segment = self.most_ccw_segment(idx_he, idx_vertex)
-                # Testing
-                if next_segment is not None:
+                next_segment = self.min_angle_ccw_segment(idx_he, idx_vertex)
+                if next_segment is None:
+                    next_segment = self.max_angle_cw_segment(idx_he, idx_vertex)
+                else:  # Testing
                     tmp_s = VSegment2(next_segment, GREEN)
                 # Set up new step
                 new_starting_segment, idx_he = self.new_half_edge_handling(next_segment, idx_vertex, idx_he)
@@ -317,11 +364,11 @@ class DCEL:
         # In case, new HEs have been created, we need to check the outer HE
         if did_create_he:
             # If outer HE doesn't belong to the CH, then it's a candidate for a next starting half-edge
-            if not is_segment_of_ch(self.ch_segment_dict, outer_he):
+            if not self.is_outer_segment(self.outer_segments_dict, outer_he):
                 next_starting_he = outer_he
             else:
-                # Outer HE belongs to the convex hull, update its next/previous, if available
-                next_of_outer = self.ch_he_by_origin_dict.get(point_key_repr(outer_he.twin.origin))
+                # Outer HE is one of the outer polygon segments, update its next/previous, if available
+                next_of_outer = self.outer_he_by_origin_dict.get(point_key_repr(outer_he.twin.origin))
                 ##########
                 # Testing
                 if next_of_outer is not None:
@@ -329,7 +376,7 @@ class DCEL:
                 ##########
                 if next_of_outer is not None:
                     outer_he.set_next(next_of_outer)
-                prev_of_outer = self.ch_he_by_dest_dict.get(point_key_repr(outer_he.origin))
+                prev_of_outer = self.outer_he_by_dest_dict.get(point_key_repr(outer_he.origin))
                 ##########
                 # Testing
                 if prev_of_outer is not None:
@@ -337,7 +384,7 @@ class DCEL:
                 ##########
                 if prev_of_outer is not None:
                     outer_he.set_previous(prev_of_outer)
-                self.add_to_ch_half_edges_dicts(outer_he)
+                self.add_to_outer_half_edges_dicts(outer_he)
         if did_create_origin:
             self.vertices.append(origin)
         if did_create_twin_origin:
@@ -353,7 +400,43 @@ class DCEL:
 # #########################################
 # Connected graph (similar to a triangulation subdivision) methods
 # #########################################
-#     def populate_outer_segments_dict(self, ch_segments_dict):
+    def populate_outer_segments_dict(self, ch_segments_list, segments_dict):
+        """
+        Populates a dictionary of the outer segments of the connected graph
+
+        Note1:  Dictionary contains as values the outer segments and uses as keys the segment_double_key_representation
+                method
+        :param ch_segments_list: The list of the convex hull segments
+        :param segments_dict: The dictionary of the segments of the input
+        """
+        for ch_s in ch_segments_list:
+            s_repr = segment_double_key_repr(ch_s)
+            ch_segment = VSegment2(ch_s, MAGENTA)
+            # CH segment is one of input => Is outer segment
+            if s_repr[0] in segments_dict or s_repr[1] in segments_dict:
+                tmp_s = segments_dict.get(s_repr[0]) if s_repr[0] in segments_dict else segments_dict.get(s_repr[1])
+                DCEL.add_segment_to_outer_segments_dict(self.outer_segments_dict, tmp_s, s_repr)
+            else:
+                # CH segment isn't part of input => Replace it with its connected components
+                idx_point = ch_s.start if ch_s.start.y > ch_s.end.y else ch_s.end
+                start_point = ch_s.start if idx_point != ch_s.start else ch_s.end
+                next_segment = self.min_angle_ccw_segment(ch_s, idx_point)
+                if next_segment is None:
+                    tmp = idx_point
+                    idx_point = start_point
+                    start_point = tmp
+                idx_segment = ch_s
+                while idx_point != start_point:
+                    visual_segment = None
+                    next_segment = self.min_angle_ccw_segment(idx_segment, idx_point)
+                    if next_segment is None:
+                        next_segment = self.max_angle_cw_segment(idx_segment, idx_point)
+                        visual_segment = VSegment2(next_segment, YELLOW)
+                    else:  # Testing
+                        visual_segment = VSegment2(next_segment, YELLOW)
+                    self.add_segment_to_outer_segments_dict(self.outer_segments_dict, next_segment)
+                    idx_point = next_segment.start if next_segment.start != idx_point else next_segment.end
+                    idx_segment = next_segment
 
     def connected_graph_handle_bb_components(self):
         """Handle BB edges and vertices, by starting from lower left vertice and cycling in a CCW way"""
@@ -444,24 +527,24 @@ class DCEL:
         # Updating the DCEL object catalogues
         self.vertices += [min_x_vert, other_vert]
         self.half_edges += [outer_he, inner_he]
-        # Update the CH half-edges dictionaries
-        self.add_to_ch_half_edges_dicts(outer_he)
+        # Update the outer half-edges dictionaries
+        self.add_to_outer_half_edges_dicts(outer_he)
         return inner_he
 
 # #########################################
 # DCEL class helper methods
 # #########################################
-    def add_to_ch_half_edges_dicts(self, he):
+    def add_to_outer_half_edges_dicts(self, he):
         """
-        Adds the given half-edge to the two dictionaries of half-edges belonging to the CH
+        Adds the given half-edge to the two dictionaries of the outer half-edges
 
         The dictionaries are as follows:
-            1. key: origin of HE - value: HE with that origin -- used for setting next HE on the CH
-            2. key: destination of HE - value: HE with that destination -- used for setting previous HE on the CH
+            1. key: origin of HE - value: HE with that origin -- used for setting next outer HE
+            2. key: destination of HE - value: HE with that destination -- used for setting previous outer HE
         :param he: The half edge to be added to the dicts
         """
-        self.ch_he_by_origin_dict[point_key_repr(he.origin)] = he
-        self.ch_he_by_dest_dict[point_key_repr(he.twin.origin)] = he
+        self.outer_he_by_origin_dict[point_key_repr(he.origin)] = he
+        self.outer_he_by_dest_dict[point_key_repr(he.twin.origin)] = he
 
     def create_or_get_vertex(self, point):
         """
@@ -541,9 +624,9 @@ class DCEL:
                 res.append(e)
         return res
 
-    def most_ccw_segment(self, segment, connection_point):
+    def min_angle_ccw_segment(self, segment, connection_point):
         """
-        Returns a segment that defines the minimum angle with the given segment
+        Returns a segment that defines the minimum angle with the given segment in a CCW manner
 
         :param segment: Segment2 The segment that will act as a base for the other segments to be found
         :param connection_point: Point2 The point of the segment that will be used for searching connected segments
@@ -559,38 +642,62 @@ class DCEL:
             tmp_s = VSegment2(e, RED)
             angle = vectors_angle(segment, e)
             e_point = e.end if e.end != connection_point else e.start
-            if ccw(segment.start, connection_point, e_point) and angle < min_angle:
+            s_point = segment.start if connection_point != segment.start else segment.end
+            if ccw(s_point, connection_point, e_point) and angle < min_angle:
                 min_angle = angle
                 result = e
         return result
 
-    def most_cw_segment(self, segment):
-        """Returns a segment that defines the minimum angle with the given segment
-        The segments are also connected in a CW manner"""
-        edges = self.find_connected_segments_with_segment(segment)
-        min_angle = 2 * math.pi
-        result = None
-        for e in edges:
-            angle = vectors_angle(segment, e)
-            if cw(segment.start, segment.end, e.end) and angle < min_angle:
-                min_angle = angle
-                result = e
-        self.v_segments.append(VSegment2(result, BLUE))
-        return result
+    def max_angle_cw_segment(self, segment, connection_point):
+        """
+        Returns a segment that defines the maximum angle with the given segment in a CW manner
 
-    def least_cw_segment(self, segment):
-        """Returns a segment that defines the maximum angle with the given segment
-        The segments are also connected in a CW manner"""
-        edges = self.find_connected_segments_with_segment(segment)
+        :param segment: Segment2 The segment that will act as a base for the other segments to be found
+        :param connection_point: Point2 The point of the segment that will be used for searching connected segments
+        :return:    The segment that:
+                        (i) is connected in CW manner with the given one and
+                        (ii) defines the maximum angle with the given segment
+        """
+        edges = self.find_connected_segments_with_segment(segment, connection_point)
+        tmp_seg = VSegment2(segment, BLUE)
         max_angle = 0
         result = None
         for e in edges:
+            tmp_s = VSegment2(e, RED)
             angle = vectors_angle(segment, e)
-            if cw(segment.start, segment.end, e.end) and angle > max_angle:
+            e_point = e.end if e.end != connection_point else e.start
+            s_point = segment.start if connection_point != segment.start else segment.end
+            if cw(s_point, connection_point, e_point) and angle > max_angle:
                 max_angle = angle
                 result = e
-        self.v_segments.append(VSegment2(result, BLUE))
         return result
+
+    @staticmethod
+    def add_segment_to_outer_segments_dict(outer_segments_dict, segment, s_repr=None):
+        """
+        Ads a segment to the dictionary of outer segments of the polygon
+
+        :param p1: Point2 A point of the segment
+        :param p2: Point2 The other point of the segment
+        :param outer_segments_dict: Dictionary The dict that maps segment representation to Segment2 (Outer segments)
+        """
+        if s_repr is None:
+            s_repr = segment_double_key_repr(segment)
+        outer_segments_dict.update({s_repr[0]: segment, s_repr[1]: segment})
+
+    @staticmethod
+    def is_outer_segment(outer_segments_dict, segment):
+        """
+        Tests for membership of the segment in the outer segments of the polygon
+        :param outer_segments_dict: The dictionary holding the outer segments of the polygon
+        :param segment: The segment to be tested for membership
+        :return: True, on membership, False otherwise
+        """
+        s_repr = segment_double_key_repr(segment)
+        if s_repr[0] in outer_segments_dict or s_repr[1] in outer_segments_dict:
+            return True
+        else:
+            return False
 
 
 # #########################################
@@ -624,13 +731,19 @@ def vectors_angle(v1, v2):
 
 
 if __name__ == '__main__':
-    dcel_data = DcelInputData(20)
-    vertices_pack, edges_pack, min_max_coords_tuple = dcel_data.get_visual_dcel_members()
+    if len(sys.argv) == 1:
+        dcel_data = DcelInputData(20)
+        dcel_data.get_visual_dcel_members()
+        dcel_data.pickle_dcel_data()
+    else:
+        dcel_data = DcelInputData.unpickle_dcel_data(sys.argv[1])
     print "Done with DCELInputGather"
-    dcel = DCEL(vertices_pack[0], edges_pack[0], dcel_data.is_connected_graph, min_max_coords_tuple, dcel_data.bb_dist,
-                dcel_data.bb_edges_number, vertices_pack[1], edges_pack[1], dcel_data.ch_segments_dict)
+    min_max_coords_tuple = (dcel_data.min_x, dcel_data.min_y, dcel_data.max_x, dcel_data.max_y)
+    dcel = DCEL(dcel_data.vertices, dcel_data.edges, dcel_data.is_connected_graph, min_max_coords_tuple,
+                dcel_data.bb_dist,  dcel_data.bb_edges_number, dcel_data.v_vertices, dcel_data.v_edges,
+                dcel_data.ch_segments_list, dcel_data.segments_dict)
     print dcel.faces
     print dcel.vertices
     print dcel.half_edges
     pause()
-    del vertices_pack, edges_pack, dcel_data
+    del dcel_data
