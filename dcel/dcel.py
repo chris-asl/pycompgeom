@@ -5,6 +5,7 @@ from pycompgeom.visuals import *
 from dcel_gather_input import DcelInputData, similar_edges, segment_double_key_repr, get_segments_of_convex_hull
 import pickle
 
+
 class HalfEdge(Segment2):
     def __init__(self, origin, segment):
         """
@@ -270,9 +271,17 @@ class DCEL:
             if e.next is None:
                 print e, " -> next is None"
                 DCEL.draw_half_edge(e)
+            else:
+                if e.next.origin != e.twin.origin:
+                    print e, " -> e.next.origin != e.twin.origin"
+                    DCEL.draw_half_edge(e)
             if e.previous is None:
                 print e, " -> previous is None"
                 DCEL.draw_half_edge(e)
+            else:
+                if e.previous.twin.origin != e.origin:
+                    print e, " -> e.previous.twin.origin != e.origin"
+                    DCEL.draw_half_edge(e)
             if e.twin is None:
                 print e, " -> twin is None"
                 DCEL.draw_half_edge(e)
@@ -290,9 +299,30 @@ class DCEL:
         pause()
 
     def test_vertices_incident_edges(self):
-        for v in self.vertices:
-            test = VPoint2(v, MAGENTA)
-            print v
+        # Create dict of (dest_vertex) -> [he1, he2, ...]
+        try:
+            from collections import defaultdict
+        except ImportError:
+            print "Could not import collections.defaultdict\nThis test cannot run"
+        else:
+            dest_dict = defaultdict(list)
+            for he in self.half_edges:
+                dest_dict[point_key_repr(he.twin.origin)].append(he)
+            for v in self.vertices:
+                test = VPoint2(v, MAGENTA)
+                incident_edges_list = dest_dict.get(point_key_repr(v))
+                if len(incident_edges_list) != len(v.incident_edges):
+                    print v, "Erroneous number of incident half-edges\n" \
+                             "Should be ", len(incident_edges_list), " and it's ", len(v.incident_edges), "\n"
+                else:
+                    try:
+                        from collections import Counter
+                    except ImportError:
+                        print "Could not import collections.Counter\nThe test will stop now\n"
+                    else:
+                        if Counter(incident_edges_list) != Counter(v.incident_edges):
+                            print "Incident edges lists aren't equal\nVertex incident edges:\n", v.incident_edges, \
+                                "\nFound incident edges:\n", incident_edges_list
 
     def test_visual_he_relationships(self):
         """Iterate through all the faces, iterating through their HEs, and drawing each one with its prev/next"""
