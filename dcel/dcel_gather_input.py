@@ -1,11 +1,13 @@
 # !/usr/bin/env python
 # -*- coding: utf-8 -*-
+from __future__ import division
 __author__ = 'Chris Aslanoglou'
 from pycompgeom import *
 from math import sqrt
 import pickle
 from time import time
 from datetime import datetime
+
 
 def similar_vertices(v1, v2, epsilon=5.0):
     """
@@ -53,6 +55,15 @@ def segment_double_key_repr(segment):
     return repr1, repr2
 
 
+def point_key_repr(*args):
+    if len(args) == 2 and type(args) is tuple:
+        return str(args[0]) + "," + str(args[1])
+    elif len(args) == 1 and isinstance(args[0], Point2):
+        return str(args[0].x) + "," + str(args[0].y)
+    else:
+        raise TypeError("point_key_repr: Expected type \"tuple\" or \"Point2\", got: " + str(type(args)))
+
+
 def get_segments_of_convex_hull(points):
     """
     Builds the convex hull of the point set given, and returns the CH segments in a list
@@ -71,13 +82,57 @@ def get_segments_of_convex_hull(points):
     return ch_segments_list
 
 
+def line(p1, p2):
+    """
+    This method calculates the equation of a line that passes through p1 and p2 points
+    :param p1: Point2
+    :param p2: Point2
+    :return:    A function f(x) that computes the value of the line equation that passes through p1, p2 points
+    """
+    horizontal_line = False
+    vertical_line = False
+    if p1.x == p2.x:
+        horizontal_line = True
+    if p1.y == p2.y:
+        vertical_line = True
+    coef = (p1.y - p2.y) / (p1.x - p2.x)
+    inv_coef = 1 / coef if coef != 0 else 0
+    b = p1.y - coef * p1.x
+
+    def result(param, is_function_of_x):
+        """
+        Returns the other coordinate of the equation, depending on the is_function_of_x parameter
+        That is, it returns y, if is_function_of_x is true, x, otherwise
+
+        :param param: int The x or y coordinate
+        :param is_function_of_x: Boolean Indicates whether we need an f(x) or f^(-1)(y) solution
+        :return: The x or y coordinate that holds for the other given coordinate
+        """
+        if is_function_of_x:
+            if not horizontal_line:
+                return coef * param + b
+            else:
+                return p1.y
+        else:
+            if not vertical_line:
+                return inv_coef * (param - b)
+            else:
+                return p1.x
+    return result
+
+
 class DcelInputData:
     def __init__(self, bb_dist=20):
         self.vertices, self.edges, self.v_edges, self.v_vertices = [], [], [], []
         self.epsilon = 5.0
         self.is_connected_graph = True
         self.ch_segments_list = None
-        self.segments_dict = {}
+        # Temporary storage for initial infinite segments
+        self.inf_segments_list = []
+        self.v_inf_segments_list = []
+        self.v_inf_vertices_list = []
+        # Hashing the segments using two keys (start,end) and (end, start) for each one
+        self.points_to_segment_dict = {}
         # Bounding box related data members
         # bb_dist : Is the distance which is added to the main shape (min/max{x/y}) coordinates, so as to
         #           place the Bounding Box edges
@@ -107,7 +162,7 @@ class DcelInputData:
             return is_similar
         else:
             s_repr = segment_double_key_repr(edge)
-            if s_repr[0] in self.segments_dict or s_repr[1] in self.segments_dict:
+            if s_repr[0] in self.points_to_segment_dict or s_repr[1] in self.points_to_segment_dict:
                 return True
             else:
                 return False
@@ -151,48 +206,225 @@ class DcelInputData:
             self.edges.append(tmp_segment)
             self.v_edges.append(VSegment2(tmp_segment))
         else:
-            pass
+            # We need to iterate through the inf segments and find their incision points with the BB lines
+            # Storing then, each intersection point to a respective list (lower/ right/ upper/ left) of BB line points
+            # Finally, for each BB line, sort its points (from the list above) by x or y coord (depending on which line)
+            # and start walking the line and creating new segments
 
-    def handle_input(self, vertex, previous_vertex, add_segment):
-        """Handles the input and does the bookkeeping on adding the vertices and edges"""
+            # Find BB line equations
+            bb_upper_line = upper_left_v.y
+            bb_lower_line = lower_left_v.y
+            bb_left_line = upper_left_v.x
+            bb_right_line = upper_right_v.x
+            bb_upper_line_points = []
+            bb_lower_line_points = []
+            bb_left_line_points = []
+            bb_right_line_points = []
+            for inf_segment, inf_point in self.inf_segments_list:
+                inf_line_equation = line(inf_segment.start, inf_segment.end)
+                tmp_s = VSegment2(inf_segment, MAGENTA)
+                # Covering the vertical bb lines first
+                vert_result = DcelInputData.check_intersection(inf_line_equation, inf_point, bb_left_line,
+                                                               bb_right_line, bb_lower_line, bb_upper_line, True)
+                hor_result = DcelInputData.check_intersection(inf_line_equation, inf_point, bb_left_line,
+                                                              bb_right_line, bb_lower_line, bb_upper_line, False)
+                # The usual case is that one of the above points is None, the degenerate case is when the
+                # segment is a diagonal of the BB, in that case
+                is_on_left_bb_line = is_on_lower_bb_line = False
+                if vert_result is not None and hor_result is None:
+                    intersection_point, minimum_dist, is_on_left_bb_line = vert_result
+                elif vert_result is None and hor_result is not None:
+                    intersection_point, minimum_dist, is_on_lower_bb_line = hor_result
+                elif vert_result is not None and hor_result is not None:
+                    vert_intersection_point, vert_minimum_dist, is_on_left_bb_line = vert_result
+                    hor_intersection_point, hor_minimum_dist, is_on_lower_bb_line = hor_result
+                    intersection_point, minimum_dist, _ = vert_result if vert_minimum_dist < hor_minimum_dist \
+                        else hor_result
+                else:
+                    raise ValueError("Erroneous intersection detection\nSth went terribly wrong")
+
+                self.vertices.append(Point2.from_tuple(intersection_point))
+                self.v_vertices.append(VPoint2(self.vertices[-1], YELLOW))
+                if vert_result is not None and hor_result is None:
+                    if is_on_left_bb_line:
+                        bb_left_line_points.append(self.vertices[-1])
+                    else:
+                        bb_right_line_points.append(self.vertices[-1])
+                elif vert_result is None and hor_result is not None:
+                    if is_on_lower_bb_line:
+                        bb_lower_line_points.append(self.vertices[-1])
+                    else:
+                        bb_upper_line_points.append(self.vertices[-1])
+                
+                other_v = inf_segment.start if inf_segment.start != inf_point else inf_segment.end
+                self.edges.append(Segment2(other_v, self.vertices[-1]))
+                repr_tuple = segment_double_key_repr(self.edges[-1])
+                self.points_to_segment_dict.update({repr_tuple[0]: self.edges[-1], repr_tuple[1]: self.edges[-1]})
+                self.v_edges.append(VSegment2(self.edges[-1], YELLOW))
+
+                del tmp_s
+            del self.v_inf_segments_list, self.v_inf_vertices_list, self.inf_segments_list
+            # Start creating the new segments of the BB
+            self.create_bb_segments(True, bb_upper_line_points, upper_left_v, upper_right_v)
+            self.create_bb_segments(True, bb_lower_line_points, lower_left_v, lower_right_v)
+            self.create_bb_segments(False, bb_left_line_points, lower_left_v, upper_left_v)
+            self.create_bb_segments(False, bb_right_line_points, lower_right_v, upper_right_v)
+            print "done"
+
+    def create_bb_segments(self, is_horizontal_movement, bb_line_points, start_point, end_point):
+        # Sort the bb line points by x or y coordinate
+        # Will attempt sorting with an optimized version, given that we might have a lot of points to process
+        if len(bb_line_points) == 0:
+            self.edges.append(Segment2(start_point, end_point))
+            self.v_edges.append(VSegment2(self.edges[-1], CYAN))
+            self.bb_edges_number += 1
+            return
+        try:
+            import operator
+        except ImportError:
+            key_function = lambda p: p.x if is_horizontal_movement else lambda p: p.y
+        else:
+            key_function = operator.attrgetter("x") if is_horizontal_movement else operator.attrgetter("y")
+        bb_line_points.sort(key=key_function, reverse=False)
+        # Start walking the line and creating new segments
+        self.edges.append(Segment2(start_point, bb_line_points[0]))
+        self.v_edges.append(VSegment2(self.edges[-1], CYAN))
+        for i in range(1, len(bb_line_points)):
+            self.edges.append(Segment2(bb_line_points[i-1], bb_line_points[i]))
+            self.v_edges.append(VSegment2(self.edges[-1], CYAN))
+        self.edges.append(Segment2(bb_line_points[len(bb_line_points) - 1], end_point))
+        self.v_edges.append(VSegment2(self.edges[-1], CYAN))
+        self.bb_edges_number += len(bb_line_points) + 1
+
+    @staticmethod
+    def check_intersection(inf_line_equation, inf_point, bb_left_line, bb_right_line, bb_lower_line, bb_upper_line,
+                           check_vertical_bb_lines):
+        """
+        Finds the minimum distance intersection point of the line equation given and the two vertical/horizontal BB
+        lines, if any
+
+        :param inf_line_equation: Segment2 The line equation of the infinite segment
+        :param inf_point: Point2 The infinite point
+        :param bb_left_line: int The BB left line (x-coord)
+        :param bb_right_line: int The BB right line (x-coord)
+        :param bb_lower_line: int The BB upper line (y-coord)
+        :param bb_upper_line: int The BB lower line (y-coord)
+        :return:    A 3-tuple (minimum_distance_intersection_point, minimum_distance_to_inf_point,
+                    is_on_first_bb_line), or None if there isn't any intersection point
+                    is_on_first_bb_line: This shows that if check_vertical_bb_lines(=True), then the intersection point
+                    was on the left one, or if check_vertical_bb_lines(=False), the intersection point was on the lower
+                    bb line
+        """
+        # Setting some aliases so as to use the same method for finding the intersection points of the equation with
+        # both the vertical and horizontal lines of the BB
+        if check_vertical_bb_lines:
+            main_lines = bb_left_line, bb_right_line
+            other_lines = bb_lower_line, bb_upper_line
+            other_coord = 1
+        else:
+            main_lines = bb_lower_line, bb_upper_line
+            other_lines = bb_left_line, bb_right_line
+            other_coord = 0
+
+        if check_vertical_bb_lines:
+            inters_p1 = (main_lines[0], int(inf_line_equation(main_lines[0], check_vertical_bb_lines)))
+            inters_p2 = (main_lines[1], int(inf_line_equation(main_lines[1], check_vertical_bb_lines)))
+        else:
+            inters_p1 = (int(inf_line_equation(main_lines[0], check_vertical_bb_lines)), main_lines[0])
+            inters_p2 = (int(inf_line_equation(main_lines[1], check_vertical_bb_lines)), main_lines[1])
+        dist = lambda p: ((p[0] - inf_point.x) ** 2 + (p[1] - inf_point.y) ** 2) ** 0.5
+        # Check if point belongs into the BB
+        if inters_p1[other_coord] < other_lines[0] or inters_p1[other_coord] > other_lines[1]:
+            inters_p1 = None
+        if inters_p2[other_coord] < other_lines[0] or inters_p2[other_coord] > other_lines[1]:
+            inters_p2 = None
+        # Both points are out of the BB
+        if inters_p1 is None and inters_p2 is None:
+            return None
+        # One point is into the BB, return (p, dist(p, inf_point))
+        elif inters_p1 is not None and inters_p2 is None:
+            return inters_p1, dist(inters_p1), True
+        elif inters_p1 is None and inters_p2 is not None:
+            return inters_p2, dist(inters_p2), False
+        # Both points are into the BB, return the min{ dist(p1, inf_point), dist(p2, inf_point) } in the form of a
+        # minimum_distance_point, minimum_distance
+        else:
+            distances = (dist(inters_p1), dist(inters_p2))
+            if distances[0] <= distances[1]:
+                return inters_p1, distances[0], True
+            else:
+                return inters_p2, distances[1], False
+
+    def handle_input(self, vertex, previous_vertex, add_segment, is_inf_point):
+        """
+        Handles the input and does the bookkeeping on adding the vertices and edges
+
+        :param vertex: Point2 The latest vertex
+        :param previous_vertex: Point2 The previously added vertex
+        :param add_segment: Boolean Should add segment flag
+        :param is_inf_point: Boolean Vertex is infinite point
+        """
         if len(self.vertices) > 0:
             # Don't add new vertex (already added before)
-            vertex_result = self.vertex_already_added(vertex)
-            if vertex_result[0]:
+            v_was_already_added, already_added_vertex = self.vertex_already_added(vertex)
+            if v_was_already_added:
                 # Create new edge if:
                 #   1. It's not same with the ones already added
                 #   2. The previous and current vertices aren't the same
-                if not similar_vertices(previous_vertex, vertex_result[1]):
-                    edge = Segment2(previous_vertex, vertex_result[1])
+                if not similar_vertices(previous_vertex, already_added_vertex):
+                    edge = Segment2(previous_vertex, already_added_vertex)
                     if self.edge_already_added(edge) is False:
                         self.edges.append(edge)
                         repr_tuple = segment_double_key_repr(edge)
-                        self.segments_dict.update({repr_tuple[0]: edge, repr_tuple[1]: edge})
+                        self.points_to_segment_dict.update({repr_tuple[0]: edge, repr_tuple[1]: edge})
                         self.v_edges.append(VSegment2(self.edges[-1]))
-                return vertex_result[1]
+                return already_added_vertex
             else:
+                if not is_inf_point:
+                    self.update_bounding_box_members(vertex)
+                    self.vertices.append(vertex)
+                    self.v_vertices.append(VPoint2(self.vertices[-1]))
+                else:
+                    self.v_inf_vertices_list.append(VPoint2(vertex, RED))
+                if len(self.vertices) > 1 and add_segment:
+                    edge = Segment2(previous_vertex, vertex)
+                    if not is_inf_point:
+                        self.edges.append(edge)
+                        repr_tuple = segment_double_key_repr(edge)
+                        self.points_to_segment_dict.update({repr_tuple[0]: edge, repr_tuple[1]: edge})
+                        self.v_edges.append(VSegment2(edge))
+                    else:
+                        self.inf_segments_list.append((edge, vertex))
+                        self.v_inf_segments_list.append(VSegment2(edge, CYAN))
+                return vertex
+        else:
+            if not is_inf_point:  # First point must not be an inf one
                 self.update_bounding_box_members(vertex)
                 self.vertices.append(vertex)
                 self.v_vertices.append(VPoint2(self.vertices[-1]))
-                if len(self.vertices) > 1 and add_segment:
-                    edge = Segment2(previous_vertex, self. vertices[-1])
-                    self.edges.append(edge)
-                    repr_tuple = segment_double_key_repr(edge)
-                    self.segments_dict.update({repr_tuple[0]: edge, repr_tuple[1]: edge})
-                    self.v_edges.append(VSegment2(edge))
                 return vertex
-        else:
-            self.update_bounding_box_members(vertex)
-            self.vertices.append(vertex)
-            self.v_vertices.append(VPoint2(self.vertices[-1]))
-            return vertex
+            else:
+                return None
 
-    def get_visual_dcel_members(self, button_in=LEFTBUTTON, button_new_segment=MIDDLEBUTTON, button_exit=RIGHTBUTTON):
+    def get_visual_dcel_members(self, button_in=LEFTBUTTON, button_new_segment=MIDDLEBUTTON,
+                                button_inf_point=RIGHTBUTTON):
         """
         Gathers all the necessary data (vertices, edges) for the Doubly Connected Edge List data structure
-        :param button_in: The input button [default is LMB]
-        :param button_new_segment: The new segment button (not in sequence with the previous one) [default is MMB]
-        :param button_exit: The exit button [default is RMB]
+        Notes:
+        1. End input with ESCAPE button
+        2. [Case of non-connected graph]
+            To insert an infinite point (denoted by RED colour), you have to have the previous point (start of the
+            infinite segment) already created. Do that by either :
+            i. Using LMB and then RMB, or
+            ii. If you already have created the start point and continued with not-creating the inf-segment: click on
+                the start point with MMB (so as to "select" that point as start) and then RMB to add the infinity point
+
+        :param button_in:   The new point button (creates point and segment - in sequence with the previous segment)
+                            [default is LMB]
+        :param button_new_segment:  The new starting point button (creates point and segment - not in sequence with the
+                                    previous segment) [default is MMB]
+        :param button_inf_point:    The new infinite point button (creates infinite point and segment - in sequence
+                                    with the previous segment) [default is RMB]
         """
         # Boilerplate code for adding some descriptive text
         pygame.display.set_caption("Create a DCEL (no intersections with the edges)")
@@ -207,28 +439,34 @@ class DcelInputData:
         while True:
             event = pygame.event.poll()
             if event.type == pygame.MOUSEBUTTONDOWN:
+                pos = window.cartesian(event.pos)
+                vertex = Point2.from_tuple(pos)
                 if event.button == button_in:
-                    pos = window.cartesian(event.pos)
-                    vertex = Point2.from_tuple(pos)
                     # First initialization of bounding box data members
                     if self.min_x is None and self.min_y is None and self.max_x is None and self.max_y is None:
                         self.min_x = self.max_x = vertex.x
                         self.min_y = self.max_y = vertex.y
-                    previous_vertex = self.handle_input(vertex, previous_vertex, True)
+                    previous_vertex = self.handle_input(vertex, previous_vertex, True, False)
                 elif event.button == button_new_segment:
-                    pos = window.cartesian(event.pos)
-                    previous_vertex = vertex = Point2.from_tuple(pos)
-                    previous_vertex = self.handle_input(vertex, previous_vertex, False)
-                elif event.button == button_exit:
+                    previous_vertex = vertex
+                    previous_vertex = self.handle_input(vertex, previous_vertex, False, False)
+                elif event.button == button_inf_point:
+                    previous_vertex = self.handle_input(vertex, previous_vertex, True, True)
+                elif not should_i_quit(event):
+                    event = None
+            elif event.type == pygame.KEYDOWN:
+                print event
+                if event.key == pygame.K_ESCAPE:
                     if len(self.vertices) < 3:
                         raise ValueError("#vertices must be >= 3")
                     if len(self.edges) < 3:
                         raise ValueError("#edges must be >= 3")
-                    self.ch_segments_list = get_segments_of_convex_hull(self.vertices)
+                    if len(self.inf_segments_list) > 0:
+                        self.is_connected_graph = False
+                    if self.is_connected_graph:
+                        self.ch_segments_list = get_segments_of_convex_hull(self.vertices)
                     self.add_bounding_box_elements()
                     return
-                elif not should_i_quit(event):
-                    event = None
 
     def pickle_dcel_data(self, filename=None):
         if filename is None:
@@ -257,7 +495,7 @@ if __name__ == '__main__':
     dcel_data.get_visual_dcel_members()
     print dcel_data
     dcel_data.pickle_dcel_data()
-    # dcel_test = DcelInputData.unpickle_dcel_data("")
-    print dcel_test
+    # dcel_test = DcelInputData.unpickle_dcel_data("test.bin")
+    # print dcel_test
     pause()
     del dcel_data

@@ -750,7 +750,7 @@ if __name__ == '__main__':
     min_max_coords_tuple = (dcel_data.min_x, dcel_data.min_y, dcel_data.max_x, dcel_data.max_y)
     dcel = DCEL(dcel_data.vertices, dcel_data.edges, dcel_data.is_connected_graph, min_max_coords_tuple,
                 dcel_data.bb_dist,  dcel_data.bb_edges_number, dcel_data.v_vertices, dcel_data.v_edges,
-                dcel_data.ch_segments_list, dcel_data.segments_dict)
+                dcel_data.ch_segments_list, dcel_data.points_to_segment_dict)
     print dcel.faces
     print dcel.vertices
     print dcel.half_edges
