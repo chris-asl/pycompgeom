@@ -484,7 +484,6 @@ class DcelInputData:
                 elif not should_i_quit(event):
                     event = None
             elif event.type == pygame.KEYDOWN:
-                print event
                 if event.key == pygame.K_ESCAPE:
                     if len(self.vertices) < 3:
                         raise ValueError("#vertices must be >= 3")
