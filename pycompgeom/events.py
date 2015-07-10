@@ -1,6 +1,7 @@
 LEFTBUTTON = 1
 MIDDLEBUTTON = 2
 RIGHTBUTTON = 3
+K_ESCAPE = 4
 
 import pygame
 import sys
