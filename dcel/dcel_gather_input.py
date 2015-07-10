@@ -124,9 +124,12 @@ def line(p1, p2):
 class DcelInputData:
     def __init__(self, bb_dist=20):
         self.vertices, self.edges, self.v_edges, self.v_vertices = [], [], [], []
+        # The starting segment at the case of non-connected graph
+        self.starting_segment = None
         self.epsilon = 5.0
         self.is_connected_graph = True
         self.ch_segments_list = None
+        self.outer_segments_list = None
         # Temporary storage for initial infinite segments
         self.inf_segments_list = []
         self.v_inf_segments_list = []
@@ -255,7 +258,18 @@ class DcelInputData:
                         bb_lower_line_points.append(self.vertices[-1])
                     else:
                         bb_upper_line_points.append(self.vertices[-1])
-                
+                elif vert_result is not None and hor_result is not None:
+                    if vert_minimum_dist < hor_minimum_dist:
+                        if is_on_left_bb_line:
+                            bb_left_line_points.append(self.vertices[-1])
+                        else:
+                            bb_right_line_points.append(self.vertices[-1])
+                    else:
+                        if is_on_lower_bb_line:
+                            bb_lower_line_points.append(self.vertices[-1])
+                        else:
+                            bb_upper_line_points.append(self.vertices[-1])
+
                 other_v = inf_segment.start if inf_segment.start != inf_point else inf_segment.end
                 self.edges.append(Segment2(other_v, self.vertices[-1]))
                 repr_tuple = segment_double_key_repr(self.edges[-1])
@@ -265,20 +279,30 @@ class DcelInputData:
                 del tmp_s
             del self.v_inf_segments_list, self.v_inf_vertices_list, self.inf_segments_list
             # Start creating the new segments of the BB
-            self.create_bb_segments(True, bb_upper_line_points, upper_left_v, upper_right_v)
-            self.create_bb_segments(True, bb_lower_line_points, lower_left_v, lower_right_v)
-            self.create_bb_segments(False, bb_left_line_points, lower_left_v, upper_left_v)
-            self.create_bb_segments(False, bb_right_line_points, lower_right_v, upper_right_v)
-            print "done"
+            self.outer_segments_list = []
+            _, upper_segments = self.create_bb_segments(True, bb_upper_line_points, upper_left_v, upper_right_v)
+            self.starting_segment, lower_segments = \
+                self.create_bb_segments(True, bb_lower_line_points, lower_left_v, lower_right_v)
+            _, left_segments = self.create_bb_segments(False, bb_left_line_points, lower_left_v, upper_left_v)
+            _, right_segments = self.create_bb_segments(False, bb_right_line_points, lower_right_v, upper_right_v)
+            self.outer_segments_list.extend(upper_segments + lower_segments + left_segments + right_segments)
 
     def create_bb_segments(self, is_horizontal_movement, bb_line_points, start_point, end_point):
-        # Sort the bb line points by x or y coordinate
+        """
+        Sort the bb line points by x or y coordinate, walk the line of points and create the segments
+
+        :param is_horizontal_movement: Boolean True, if bb line is a horizontal one, False, otherwise
+        :param bb_line_points: List of Point2 The list of the points that belong at the specific bb line
+        :param start_point: Point2 The starting point of the bb line
+        :param end_point: Point2 The end point of the bb line
+        :return: A 2-tuple (The first segment that was created, all the segments in a list)
+        """
         # Will attempt sorting with an optimized version, given that we might have a lot of points to process
         if len(bb_line_points) == 0:
             self.edges.append(Segment2(start_point, end_point))
-            self.v_edges.append(VSegment2(self.edges[-1], CYAN))
+            self.v_edges.append(VSegment2(self.edges[-1]))
             self.bb_edges_number += 1
-            return
+            return self.edges[-1], [self.edges[-1]]
         try:
             import operator
         except ImportError:
@@ -287,14 +311,19 @@ class DcelInputData:
             key_function = operator.attrgetter("x") if is_horizontal_movement else operator.attrgetter("y")
         bb_line_points.sort(key=key_function, reverse=False)
         # Start walking the line and creating new segments
-        self.edges.append(Segment2(start_point, bb_line_points[0]))
-        self.v_edges.append(VSegment2(self.edges[-1], CYAN))
+        first_segment = Segment2(start_point, bb_line_points[0])
+        segments = [first_segment]
+        self.edges.append(first_segment)
+        self.v_edges.append(VSegment2(self.edges[-1]))
         for i in range(1, len(bb_line_points)):
             self.edges.append(Segment2(bb_line_points[i-1], bb_line_points[i]))
-            self.v_edges.append(VSegment2(self.edges[-1], CYAN))
+            segments.append(self.edges[-1])
+            self.v_edges.append(VSegment2(self.edges[-1]))
         self.edges.append(Segment2(bb_line_points[len(bb_line_points) - 1], end_point))
-        self.v_edges.append(VSegment2(self.edges[-1], CYAN))
+        segments.append(self.edges[-1])
+        self.v_edges.append(VSegment2(self.edges[-1]))
         self.bb_edges_number += len(bb_line_points) + 1
+        return first_segment, segments
 
     @staticmethod
     def check_intersection(inf_line_equation, inf_point, bb_left_line, bb_right_line, bb_lower_line, bb_upper_line,
@@ -495,7 +524,8 @@ if __name__ == '__main__':
     dcel_data.get_visual_dcel_members()
     print dcel_data
     dcel_data.pickle_dcel_data()
-    # dcel_test = DcelInputData.unpickle_dcel_data("test.bin")
+    # dcel_data.add_bounding_box_elements()
+    # dcel_test = DcelInputData.unpickle_dcel_data("dcel_input_data-2015-07-10,19:20:51.bin")
     # print dcel_test
     pause()
     del dcel_data
