@@ -159,6 +159,8 @@ def he_key_repr(he):
     if isinstance(he, HalfEdge):
         return str(he.origin.x) + "," + str(he.origin.y) + "-" + \
                str(he.twin.origin.x) + "," + str(he.twin.origin.y)
+
+
 # #########################################
 
 
@@ -216,9 +218,9 @@ class DCEL:
         del self.half_edges
         del self.faces
 
-# #########################################
-# Algorithm methods
-# #########################################
+    # #########################################
+    # Algorithm methods
+    # #########################################
     def construct_dcel(self):
         if self.is_connected_graph:
             self.connected_graph_handle_bb_components()
@@ -268,86 +270,6 @@ class DCEL:
         del self.half_edges_dict
         del self.visited_inner_he_dict
         print "DCEL construction completed"
-
-    # ##################################################
-    # Testing methods
-    # ##################################################
-    def test_half_edges_relationships(self):
-        # Each half edge must have a next, a previous and a twin
-        for e in self.half_edges:
-            if e.next is None:
-                print e, " -> next is None"
-                DCEL.draw_half_edge(e)
-            else:
-                if e.next.origin != e.twin.origin:
-                    print e, " -> e.next.origin != e.twin.origin"
-                    DCEL.draw_half_edge(e)
-            if e.previous is None:
-                print e, " -> previous is None"
-                DCEL.draw_half_edge(e)
-            else:
-                if e.previous.twin.origin != e.origin:
-                    print e, " -> e.previous.twin.origin != e.origin"
-                    DCEL.draw_half_edge(e)
-            if e.twin is None:
-                print e, " -> twin is None"
-                DCEL.draw_half_edge(e)
-
-    @staticmethod
-    def draw_half_edge(e):
-        points = [VPoint2(e.origin, RED)]
-        tmp = [VSegment2(e, RED)]
-        if e.next is not None:
-            tmp.append(VSegment2(e.next, MAGENTA))
-            points.append(VPoint2(e.next.origin, MAGENTA))
-        if e.previous is not None:
-            tmp.append(VSegment2(e.previous, YELLOW))
-            points.append(VPoint2(e.previous.origin, YELLOW))
-        pause()
-
-    def test_vertices_incident_edges(self):
-        # Create dict of (dest_vertex) -> [he1, he2, ...]
-        try:
-            from collections import defaultdict
-        except ImportError:
-            print "Could not import collections.defaultdict\nThis test cannot run"
-        else:
-            dest_dict = defaultdict(list)
-            for he in self.half_edges:
-                dest_dict[point_key_repr(he.twin.origin)].append(he)
-            for v in self.vertices:
-                if self.debug or self.use_visuals:
-                    test = VPoint2(v, MAGENTA)
-                incident_edges_list = dest_dict.get(point_key_repr(v))
-                if len(incident_edges_list) != len(v.incident_edges):
-                    print v, "Erroneous number of incident half-edges\n" \
-                             "Should be ", len(incident_edges_list), " and it's ", len(v.incident_edges), "\n"
-                else:
-                    try:
-                        from collections import Counter
-                    except ImportError:
-                        print "Could not import collections.Counter\nThe test will stop now\n"
-                    else:
-                        if Counter(incident_edges_list) != Counter(v.incident_edges):
-                            print "Incident edges lists aren't equal\nVertex incident edges:\n", v.incident_edges, \
-                                "\nFound incident edges:\n", incident_edges_list
-
-    def test_visual_he_relationships(self):
-        """Iterate through all the faces, iterating through their HEs, and drawing each one with its prev/next"""
-        for i, f in enumerate(self.faces):
-            if i == 0 and self.debug:
-                print "Walking 1st face (BB)"
-            face_he = f.walk_face()
-            for he in face_he:
-                DCEL.draw_half_edge(he)
-            face_inner_he = f.walk_inner_components()
-            if face_inner_he is not None:
-                if i == 0 and self.debug:
-                    print "Walking inner components of 1st face"
-                for ic_pack in face_inner_he:
-                    for he in ic_pack:
-                        DCEL.draw_half_edge(he)
-    # ##################################################
 
     def new_face_handling(self, starting_he):
         """
@@ -480,10 +402,10 @@ class DCEL:
                 s_repr = segment_key_repr(outer_s, True)
                 DCEL.add_segment_to_outer_segments_dict(self.outer_segments_dict, outer_s, s_repr)
 
-
 # #########################################
 # Connected graph (similar to a triangulation subdivision) methods
 # #########################################
+
     def connected_graph_handle_bb_components(self):
         """Handle BB edges and vertices, by starting from lower left vertice and cycling in a CCW way"""
         # Create 4 vertices, 8 half-edges, and a face (the outer one)
@@ -595,9 +517,9 @@ class DCEL:
         self.add_to_outer_half_edges_dicts(outer_he)
         return inner_he
 
-# #########################################
-# Non Connected graph (similar to a Voronoi diagram) methods
-# #########################################
+    # #########################################
+    # Non Connected graph (similar to a Voronoi diagram) methods
+    # #########################################
     def non_connected_graph_get_starting_edge(self):
         """Returns the most left half_edge on the lower bb line"""
         # Create the 1st two vertices, the 1st Half-Edge and the 1st face of the non-connected-graph component
@@ -618,9 +540,9 @@ class DCEL:
 
         return inner_he
 
-# #########################################
-# DCEL class helper methods
-# #########################################
+    # #########################################
+    # DCEL class helper methods
+    # #########################################
     def add_to_outer_half_edges_dicts(self, he):
         """
         Adds the given half-edge to the two dictionaries of the outer half-edges
@@ -811,6 +733,90 @@ class DCEL:
             return True
         else:
             return False
+
+        # ##################################################
+        # Validation/ Testing methods
+        # ##################################################
+
+    def test_half_edges_relationships(self):
+        # Each half edge must have a next, a previous and a twin
+        for e in self.half_edges:
+            if e.next is None:
+                print e, " -> next is None"
+                DCEL.draw_half_edge(e)
+            else:
+                if e.next.origin != e.twin.origin:
+                    print e, " -> e.next.origin != e.twin.origin"
+                    DCEL.draw_half_edge(e)
+            if e.previous is None:
+                print e, " -> previous is None"
+                DCEL.draw_half_edge(e)
+            else:
+                if e.previous.twin.origin != e.origin:
+                    print e, " -> e.previous.twin.origin != e.origin"
+                    DCEL.draw_half_edge(e)
+            if e.twin is None:
+                print e, " -> twin is None"
+                DCEL.draw_half_edge(e)
+
+    @staticmethod
+    def draw_half_edge(e):
+        points = [VPoint2(e.origin, RED)]
+        tmp = [VSegment2(e, RED)]
+        if e.next is not None:
+            tmp.append(VSegment2(e.next, MAGENTA))
+            points.append(VPoint2(e.next.origin, MAGENTA))
+        if e.previous is not None:
+            tmp.append(VSegment2(e.previous, YELLOW))
+            points.append(VPoint2(e.previous.origin, YELLOW))
+        pause()
+
+    def test_vertices_incident_edges(self):
+        """Validates that the incident half-edges for each vertex are the correct ones"""
+        # Create dict of (dest_vertex) -> [he1, he2, ...]
+        try:
+            from collections import defaultdict
+        except ImportError:
+            print "Could not import collections.defaultdict\nThis test cannot run"
+        else:
+            dest_dict = defaultdict(list)
+            for he in self.half_edges:
+                dest_dict[point_key_repr(he.twin.origin)].append(he)
+            for v in self.vertices:
+                if self.debug or self.use_visuals:
+                    test = VPoint2(v, MAGENTA)
+                incident_edges_list = dest_dict.get(point_key_repr(v))
+                if len(incident_edges_list) != len(v.incident_edges):
+                    print v, "Erroneous number of incident half-edges\n" \
+                             "Should be ", len(incident_edges_list), " and it's ", len(v.incident_edges), "\n"
+                else:
+                    try:
+                        from collections import Counter
+                    except ImportError:
+                        print "Could not import collections.Counter\nThe test will stop now\n"
+                    else:
+                        if Counter(incident_edges_list) != Counter(v.incident_edges):
+                            print "Incident edges lists aren't equal\nVertex incident edges:\n", v.incident_edges, \
+                                "\nFound incident edges:\n", incident_edges_list
+
+    def test_visual_he_relationships(self):
+        """Iterate through all the faces, iterating through their HEs, and drawing each one with its prev/next"""
+        for i, f in enumerate(self.faces):
+            if i == 0 and self.debug:
+                print "Walking 1st face (BB)"
+            face_he = f.walk_face()
+            for he in face_he:
+                DCEL.draw_half_edge(he)
+            face_inner_he = f.walk_inner_components()
+            if face_inner_he is not None:
+                if i == 0 and self.debug:
+                    print "Walking inner components of 1st face"
+                for ic_pack in face_inner_he:
+                    for he in ic_pack:
+                        DCEL.draw_half_edge(he)
+
+
+# ##################################################
 
 
 # #########################################
