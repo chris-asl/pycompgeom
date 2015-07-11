@@ -43,3 +43,5 @@ coverage.xml
 
 # Pickle dumps from DCELInputData
 *.bin
+# Input files
+*.csv

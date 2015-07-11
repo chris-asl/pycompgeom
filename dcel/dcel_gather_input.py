@@ -7,7 +7,7 @@ from math import sqrt
 import pickle
 from time import time
 from datetime import datetime
-
+import csv
 
 def similar_vertices(v1, v2, epsilon=5.0):
     """
@@ -43,16 +43,19 @@ def similar_edges(e1, e2, epsilon):
         return False
 
 
-def segment_double_key_repr(segment):
+def segment_key_repr(segment, get_double_repr):
     """Returns a 2-tuple representation of a segment to be used as a key for a dictionary of the outer segments
 
     Format is as follows:
         1. "(start.x,start.y)-(end.x,end.y)"
         2. "(end.x,end.y)-(start.x,start.y)"
     """
-    repr1 = str(segment.start.x) + "," + str(segment.start.y) + "-" + str(segment.end.x) + "," + str(segment.end.y)
-    repr2 = str(segment.end.x) + "," + str(segment.end.y) + "-" + str(segment.start.x) + "," + str(segment.start.y)
-    return repr1, repr2
+    repr1 = str(segment.start.x) + "," + str(segment.start.y) + "," + str(segment.end.x) + "," + str(segment.end.y)
+    if get_double_repr:
+        repr2 = str(segment.end.x) + "," + str(segment.end.y) + "," + str(segment.start.x) + "," + str(segment.start.y)
+        return repr1, repr2
+    else:
+        return repr1
 
 
 def point_key_repr(*args):
@@ -122,8 +125,8 @@ def line(p1, p2):
 
 
 class DcelInputData:
-    def __init__(self, bb_dist=20):
-        self.vertices, self.edges, self.v_edges, self.v_vertices = [], [], [], []
+    def __init__(self, should_export_input_data, use_visuals, bb_dist=20, debug=False):
+        self.points, self.segments, self.v_segments, self.v_points = [], [], [], []
         # The starting segment at the case of non-connected graph
         self.starting_segment = None
         self.epsilon = 5.0
@@ -142,13 +145,16 @@ class DcelInputData:
         self.bb_dist, self.min_x, self.min_y, self.max_x, self.max_y = bb_dist, None, None, None, None
         # Counter for the number of edges that were created from the addition of the BB
         # Not always 4 (case of connected graph)
-        self.bb_edges_number = 0
+        self.bb_segments_number = 0
+        self.should_export_input_data = should_export_input_data
+        self.use_visuals = use_visuals
+        self.debug = debug
 
     def vertex_already_added(self, vertex):
         """Checks if the given vertex is an already added one"""
         is_similar = False
         similar_vertex = None
-        for vert in self.vertices:
+        for vert in self.points:
             if similar_vertices(vertex, vert, self.epsilon):
                 is_similar = True
                 similar_vertex = vert
@@ -159,12 +165,12 @@ class DcelInputData:
         """Checks if the given edge is an already added one"""
         is_similar = False
         if self.epsilon != 0:
-            for e in self.edges:
+            for e in self.segments:
                 if similar_edges(edge, e, self.epsilon):
                     is_similar = True
             return is_similar
         else:
-            s_repr = segment_double_key_repr(edge)
+            s_repr = segment_key_repr(edge, True)
             if s_repr[0] in self.points_to_segment_dict or s_repr[1] in self.points_to_segment_dict:
                 return True
             else:
@@ -172,6 +178,10 @@ class DcelInputData:
 
     def update_bounding_box_members(self, vertex):
         """Updates the coordinates (min and max of x and y) to be used for the bounding box"""
+        # First initialization of bounding box data members
+        if self.min_x is None and self.min_y is None and self.max_x is None and self.max_y is None:
+            self.min_x = self.max_x = vertex.x
+            self.min_y = self.max_y = vertex.y
         if vertex.x > self.max_x:
             self.max_x = vertex.x
         if vertex.y > self.max_y:
@@ -188,26 +198,31 @@ class DcelInputData:
         lower_right_v = Point2(self.max_x + d, self.min_y - d)
         upper_right_v = Point2(self.max_x + d, self.max_y + d)
         upper_left_v = Point2(self.min_x - d, self.max_y + d)
-        self.vertices += [upper_right_v, upper_left_v, lower_left_v, lower_right_v]
-        self.v_vertices += [VPoint2(upper_right_v), VPoint2(upper_left_v),
+        self.points += [upper_right_v, upper_left_v, lower_left_v, lower_right_v]
+        if self.use_visuals:
+            self.v_points += [VPoint2(upper_right_v), VPoint2(upper_left_v),
                             VPoint2(lower_left_v), VPoint2(lower_right_v)]
-        # CASES NEEDED (VORONOI OR TRIANGULATION)
+
         if self.is_connected_graph:
             # In the case that we don't have an edge whose endpoint is (inf) - (not a case of a Voronoi Diagram)
             # Create the four new segments
-            self.bb_edges_number = 4
+            self.bb_segments_number = 4
             tmp_segment = Segment2(lower_left_v, lower_right_v)
-            self.edges.append(tmp_segment)
-            self.v_edges.append(VSegment2(tmp_segment))
+            self.segments.append(tmp_segment)
+            if self.use_visuals:
+                self.v_segments.append(VSegment2(tmp_segment))
             tmp_segment = Segment2(lower_right_v, upper_right_v)
-            self.edges.append(tmp_segment)
-            self.v_edges.append(VSegment2(tmp_segment))
+            self.segments.append(tmp_segment)
+            if self.use_visuals:
+                self.v_segments.append(VSegment2(tmp_segment))
             tmp_segment = Segment2(upper_right_v, upper_left_v)
-            self.edges.append(tmp_segment)
-            self.v_edges.append(VSegment2(tmp_segment))
+            self.segments.append(tmp_segment)
+            if self.use_visuals:
+                self.v_segments.append(VSegment2(tmp_segment))
             tmp_segment = Segment2(upper_left_v, lower_left_v)
-            self.edges.append(tmp_segment)
-            self.v_edges.append(VSegment2(tmp_segment))
+            self.segments.append(tmp_segment)
+            if self.use_visuals:
+                self.v_segments.append(VSegment2(tmp_segment))
         else:
             # We need to iterate through the inf segments and find their incision points with the BB lines
             # Storing then, each intersection point to a respective list (lower/ right/ upper/ left) of BB line points
@@ -225,7 +240,8 @@ class DcelInputData:
             bb_right_line_points = []
             for inf_segment, inf_point in self.inf_segments_list:
                 inf_line_equation = line(inf_segment.start, inf_segment.end)
-                tmp_s = VSegment2(inf_segment, MAGENTA)
+                if self.debug:
+                    tmp_s = VSegment2(inf_segment, MAGENTA)
                 # Covering the vertical bb lines first
                 vert_result = DcelInputData.check_intersection(inf_line_equation, inf_point, bb_left_line,
                                                                bb_right_line, bb_lower_line, bb_upper_line, True)
@@ -246,37 +262,39 @@ class DcelInputData:
                 else:
                     raise ValueError("Erroneous intersection detection\nSth went terribly wrong")
 
-                self.vertices.append(Point2.from_tuple(intersection_point))
-                self.v_vertices.append(VPoint2(self.vertices[-1], YELLOW))
+                self.points.append(Point2.from_tuple(intersection_point))
+                if self.use_visuals:
+                    self.v_points.append(VPoint2(self.points[-1]))
                 if vert_result is not None and hor_result is None:
                     if is_on_left_bb_line:
-                        bb_left_line_points.append(self.vertices[-1])
+                        bb_left_line_points.append(self.points[-1])
                     else:
-                        bb_right_line_points.append(self.vertices[-1])
+                        bb_right_line_points.append(self.points[-1])
                 elif vert_result is None and hor_result is not None:
                     if is_on_lower_bb_line:
-                        bb_lower_line_points.append(self.vertices[-1])
+                        bb_lower_line_points.append(self.points[-1])
                     else:
-                        bb_upper_line_points.append(self.vertices[-1])
+                        bb_upper_line_points.append(self.points[-1])
                 elif vert_result is not None and hor_result is not None:
                     if vert_minimum_dist < hor_minimum_dist:
                         if is_on_left_bb_line:
-                            bb_left_line_points.append(self.vertices[-1])
+                            bb_left_line_points.append(self.points[-1])
                         else:
-                            bb_right_line_points.append(self.vertices[-1])
+                            bb_right_line_points.append(self.points[-1])
                     else:
                         if is_on_lower_bb_line:
-                            bb_lower_line_points.append(self.vertices[-1])
+                            bb_lower_line_points.append(self.points[-1])
                         else:
-                            bb_upper_line_points.append(self.vertices[-1])
+                            bb_upper_line_points.append(self.points[-1])
 
                 other_v = inf_segment.start if inf_segment.start != inf_point else inf_segment.end
-                self.edges.append(Segment2(other_v, self.vertices[-1]))
-                repr_tuple = segment_double_key_repr(self.edges[-1])
-                self.points_to_segment_dict.update({repr_tuple[0]: self.edges[-1], repr_tuple[1]: self.edges[-1]})
-                self.v_edges.append(VSegment2(self.edges[-1], YELLOW))
-
-                del tmp_s
+                self.segments.append(Segment2(other_v, self.points[-1]))
+                repr_tuple = segment_key_repr(self.segments[-1], True)
+                self.points_to_segment_dict.update({repr_tuple[0]: self.segments[-1], repr_tuple[1]: self.segments[-1]})
+                if self.use_visuals:
+                    self.v_segments.append(VSegment2(self.segments[-1]))
+                if self.debug:
+                    del tmp_s
             del self.v_inf_segments_list, self.v_inf_vertices_list, self.inf_segments_list
             # Start creating the new segments of the BB
             self.outer_segments_list = []
@@ -299,10 +317,11 @@ class DcelInputData:
         """
         # Will attempt sorting with an optimized version, given that we might have a lot of points to process
         if len(bb_line_points) == 0:
-            self.edges.append(Segment2(start_point, end_point))
-            self.v_edges.append(VSegment2(self.edges[-1]))
-            self.bb_edges_number += 1
-            return self.edges[-1], [self.edges[-1]]
+            self.segments.append(Segment2(start_point, end_point))
+            if self.use_visuals:
+                self.v_segments.append(VSegment2(self.segments[-1]))
+            self.bb_segments_number += 1
+            return self.segments[-1], [self.segments[-1]]
         try:
             import operator
         except ImportError:
@@ -313,16 +332,19 @@ class DcelInputData:
         # Start walking the line and creating new segments
         first_segment = Segment2(start_point, bb_line_points[0])
         segments = [first_segment]
-        self.edges.append(first_segment)
-        self.v_edges.append(VSegment2(self.edges[-1]))
+        self.segments.append(first_segment)
+        if self.use_visuals:
+            self.v_segments.append(VSegment2(self.segments[-1]))
         for i in range(1, len(bb_line_points)):
-            self.edges.append(Segment2(bb_line_points[i-1], bb_line_points[i]))
-            segments.append(self.edges[-1])
-            self.v_edges.append(VSegment2(self.edges[-1]))
-        self.edges.append(Segment2(bb_line_points[len(bb_line_points) - 1], end_point))
-        segments.append(self.edges[-1])
-        self.v_edges.append(VSegment2(self.edges[-1]))
-        self.bb_edges_number += len(bb_line_points) + 1
+            self.segments.append(Segment2(bb_line_points[i-1], bb_line_points[i]))
+            segments.append(self.segments[-1])
+            if self.use_visuals:
+                self.v_segments.append(VSegment2(self.segments[-1]))
+        self.segments.append(Segment2(bb_line_points[len(bb_line_points) - 1], end_point))
+        segments.append(self.segments[-1])
+        if self.use_visuals:
+            self.v_segments.append(VSegment2(self.segments[-1]))
+        self.bb_segments_number += len(bb_line_points) + 1
         return first_segment, segments
 
     @staticmethod
@@ -393,7 +415,7 @@ class DcelInputData:
         :param add_segment: Boolean Should add segment flag
         :param is_inf_point: Boolean Vertex is infinite point
         """
-        if len(self.vertices) > 0:
+        if len(self.points) > 0:
             # Don't add new vertex (already added before)
             v_was_already_added, already_added_vertex = self.vertex_already_added(vertex)
             if v_was_already_added:
@@ -403,25 +425,25 @@ class DcelInputData:
                 if not similar_vertices(previous_vertex, already_added_vertex):
                     edge = Segment2(previous_vertex, already_added_vertex)
                     if self.edge_already_added(edge) is False:
-                        self.edges.append(edge)
-                        repr_tuple = segment_double_key_repr(edge)
+                        self.segments.append(edge)
+                        repr_tuple = segment_key_repr(edge, True)
                         self.points_to_segment_dict.update({repr_tuple[0]: edge, repr_tuple[1]: edge})
-                        self.v_edges.append(VSegment2(self.edges[-1]))
+                        self.v_segments.append(VSegment2(self.segments[-1]))
                 return already_added_vertex
             else:
                 if not is_inf_point:
                     self.update_bounding_box_members(vertex)
-                    self.vertices.append(vertex)
-                    self.v_vertices.append(VPoint2(self.vertices[-1]))
+                    self.points.append(vertex)
+                    self.v_points.append(VPoint2(self.points[-1]))
                 else:
                     self.v_inf_vertices_list.append(VPoint2(vertex, RED))
-                if len(self.vertices) > 1 and add_segment:
+                if len(self.points) > 1 and add_segment:
                     edge = Segment2(previous_vertex, vertex)
                     if not is_inf_point:
-                        self.edges.append(edge)
-                        repr_tuple = segment_double_key_repr(edge)
+                        self.segments.append(edge)
+                        repr_tuple = segment_key_repr(edge, True)
                         self.points_to_segment_dict.update({repr_tuple[0]: edge, repr_tuple[1]: edge})
-                        self.v_edges.append(VSegment2(edge))
+                        self.v_segments.append(VSegment2(edge))
                     else:
                         self.inf_segments_list.append((edge, vertex))
                         self.v_inf_segments_list.append(VSegment2(edge, CYAN))
@@ -429,8 +451,8 @@ class DcelInputData:
         else:
             if not is_inf_point:  # First point must not be an inf one
                 self.update_bounding_box_members(vertex)
-                self.vertices.append(vertex)
-                self.v_vertices.append(VPoint2(self.vertices[-1]))
+                self.points.append(vertex)
+                self.v_points.append(VPoint2(self.points[-1]))
                 return vertex
             else:
                 return None
@@ -464,6 +486,9 @@ class DcelInputData:
         window.canvas.blit(label_2nd, (1, 20))
         pygame.display.flip()
 
+        # Since this function is used, the visuals are used
+        self.use_visuals = True
+
         previous_vertex = None
         while True:
             event = pygame.event.poll()
@@ -485,16 +510,135 @@ class DcelInputData:
                     event = None
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    if len(self.vertices) < 3:
+                    if len(self.points) < 3:
                         raise ValueError("#vertices must be >= 3")
-                    if len(self.edges) < 3:
+                    if len(self.segments) < 3:
                         raise ValueError("#edges must be >= 3")
                     if len(self.inf_segments_list) > 0:
                         self.is_connected_graph = False
                     if self.is_connected_graph:
-                        self.ch_segments_list = get_segments_of_convex_hull(self.vertices)
+                        self.ch_segments_list = get_segments_of_convex_hull(self.points)
+                    if self.should_export_input_data:
+                        self.export_input_data_to_csv()
                     self.add_bounding_box_elements()
                     return
+
+    def export_input_data_to_csv(self, filename=None):
+        """
+        This will export all the input data into a csv file of this format:
+        start.x, start.y, is_inf_point{0/1}, end.x, end.y, is_inf_point{0/1}
+
+        N.B.: This method needs the infinite segments list
+        """
+        if filename is None:
+            filename = "dcel_input_data-" + datetime.fromtimestamp(time()).strftime('%Y-%m-%d,%H:%M:%S') + ".csv"
+        with open(filename, 'w') as output_file:
+            # Header
+            output_file.write("#Header: # start.x, start.y, is_inf_point{0/1}, end.x, end.y, is_inf_point{0/1}\n")
+            for inf_s, inf_point in self.inf_segments_list:
+                if inf_point == inf_s.start:
+                    output_file.write(str(inf_point.x) + ", " + str(inf_point.y) + ", 1, " +
+                                      str(inf_s.end.x) + ", " + str(inf_s.end.y) + ", 0\n")
+                else:
+                    output_file.write(str(inf_s.start.x) + ", " + str(inf_s.start.y) + ", 0, " +
+                                      str(inf_point.x) + ", " + str(inf_point.y) + ", 1\n")
+            for s in self.segments:
+                output_file.write(str(s.start.x) + ", " + str(s.start.y) + ", 0, " +
+                                  str(s.end.x) + ", " + str(s.end.y) + ", 0\n")
+
+    def read_input_data_from_csv(self, filename, with_visuals):
+        """
+        Will read input from the csv and prepare the data members that are required by DCEL class
+        Expects a csv in the format "start.x, start.y, is_inf_point{0/1}, end.x, end.y, is_inf_point{0/1}"
+        Notice: If previous data exist, this method will delete them
+
+        :param filename: str The filename of the csv
+        :param with_visuals: Boolean True, if visual elements need to be created, False otherwise
+        """
+        # Clear up/ Reset any previous data/ state
+        self.is_connected_graph = True
+        self.starting_segment, self.ch_segments_list, self.outer_segments_list = None, None, None
+        self.inf_segments_list, self.v_inf_segments_list, self.v_inf_vertices_list = [], [], []
+        self.points_to_segment_dict = {}
+        self.min_x, self.min_y, self.max_x, self.max_y = None, None, None, None
+        self.bb_segments_number = 0
+        self.points, self.v_points, self.segments, self.v_points = [], [], [], []
+
+        points_dict = {}
+        with open(filename, 'rb') as input_csv:
+            reader = csv.reader(input_csv)
+            first_row = reader.next()
+            try:
+                x = int(first_row[0])
+            except ValueError:
+                # Skipping csv header
+                print "Skipping csv header"
+            for row in reader:
+                self.convert_csv_row_to_data(row, points_dict, with_visuals)
+        self.points = list(points_dict.values())
+        # Input has been read, start preparing data for DCEL
+        if len(self.inf_segments_list) > 0:
+            self.is_connected_graph = False
+        else:  # Connected graph case
+            self.ch_segments_list = get_segments_of_convex_hull(self.points)
+        self.add_bounding_box_elements()
+
+    def convert_csv_row_to_data(self, row, points_dict, with_visuals):
+        """Creates the points and the segments or if there's an infinite point, populates the list of inf_segments with
+        the needed tuple (inf_segment, inf_point)
+        If with_visuals is true, it creates also the visual elements needed"""
+        v1_is_inf = True if int(row[2]) == 1 else False
+        v2_is_inf = True if int(row[5]) == 1 else False
+
+        # If vertices aren't infinite ones, create them and add them to the points_dict if they aren't already a member
+        if not v1_is_inf:
+            v1_repr = point_key_repr(int(row[0]), int(row[1]))
+            if v1_repr in points_dict:
+                v1 = points_dict.get(v1_repr)
+            else:
+                v1 = Point2(int(row[0]), int(row[1]))
+                points_dict[v1_repr] = v1
+                self.update_bounding_box_members(v1)
+        else:
+            v1 = Point2(int(row[0]), int(row[1]))
+        if not v2_is_inf:
+            v2_repr = point_key_repr(int(row[3]), int(row[4]))
+            if v2_repr in points_dict:
+                v2 = points_dict.get(v2_repr)
+            else:
+                v2 = Point2(int(row[3]), int(row[4]))
+                points_dict[v2_repr] = v2
+                self.update_bounding_box_members(v2)
+        else:
+            v2 = Point2(int(row[3]), int(row[4]))
+
+        # Handle vertices that are infinite
+        if v1_is_inf and not v2_is_inf:
+            inf_segment = Segment2(v2, v1)
+            self.inf_segments_list.append((inf_segment, v1))
+            if with_visuals:
+                self.v_inf_segments_list.append(inf_segment)
+                self.v_inf_vertices_list.append(v1)
+        elif not v1_is_inf and v2_is_inf:
+            inf_segment = Segment2(v1, v2)
+            self.inf_segments_list.append((inf_segment, v2))
+            if with_visuals:
+                self.v_inf_segments_list.append(inf_segment)
+                self.v_inf_vertices_list.append(v2)
+        elif v1_is_inf and v2_is_inf:
+            print "Erroneous input: ", row, " both points of the segment cannot be infinite"
+            return
+        else:
+            self.points.append(v1)
+            self.points.append(v2)
+            edge = Segment2(v1, v2)
+            self.segments.append(edge)
+            repr_tuple = segment_key_repr(edge, True)
+            self.points_to_segment_dict.update({repr_tuple[0]: edge, repr_tuple[1]: edge})
+            if self.use_visuals:
+                self.v_points.append(VPoint2(v1))
+                self.v_points.append(VPoint2(v2))
+                self.v_segments.append(VSegment2(self.segments[-1]))
 
     def pickle_dcel_data(self, filename=None):
         if filename is None:
@@ -507,22 +651,26 @@ class DcelInputData:
         with file(filename, 'rb') as input_file:
             dcel_data_obj = pickle.load(input_file)
             # Re-"paint" all the visual objects
-            dcel_data_obj.v_vertices = [VPoint2(v) for v in dcel_data_obj.vertices]
-            dcel_data_obj.v_edges = [VSegment2(e) for e in dcel_data_obj.edges]
+            if dcel_data_obj.use_visuals:
+                dcel_data_obj.v_vertices = [VPoint2(v) for v in dcel_data_obj.vertices]
+                dcel_data_obj.v_edges = [VSegment2(e) for e in dcel_data_obj.edges]
             return dcel_data_obj
 
     def __repr__(self):
         return "DCEL Data Members:\n\t[*] Segments: %s\n\t[*] Points: %s\n" \
                "\t[*] Min_x(%s),\tMax_x(%s)\n" \
-               "\t[*] Min_y(%s),\tMax_y(%s)\n" % (self.edges, self.vertices, self.min_x, self.max_x, self.min_y,
+               "\t[*] Min_y(%s),\tMax_y(%s)\n" % (self.segments, self.points, self.min_x, self.max_x, self.min_y,
                                                   self.max_y)
 
 
 if __name__ == '__main__':
-    dcel_data = DcelInputData(20)
-    dcel_data.get_visual_dcel_members()
+    dcel_data = DcelInputData(True, True)
+    if len(sys.argv) == 1:
+        dcel_data.get_visual_dcel_members()
+        dcel_data.pickle_dcel_data()
+    else:
+        dcel_data.read_input_data_from_csv(sys.argv[1], True)
     print dcel_data
-    dcel_data.pickle_dcel_data()
     # dcel_data.add_bounding_box_elements()
     # dcel_test = DcelInputData.unpickle_dcel_data("dcel_input_data-2015-07-10,19:20:51.bin")
     # print dcel_test
