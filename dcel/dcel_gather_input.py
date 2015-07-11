@@ -9,6 +9,7 @@ from time import time
 from datetime import datetime
 import csv
 
+
 def similar_vertices(v1, v2, epsilon=5.0):
     """
     Checks if two vertices are the same
@@ -652,8 +653,8 @@ class DcelInputData:
             dcel_data_obj = pickle.load(input_file)
             # Re-"paint" all the visual objects
             if dcel_data_obj.use_visuals:
-                dcel_data_obj.v_vertices = [VPoint2(v) for v in dcel_data_obj.vertices]
-                dcel_data_obj.v_edges = [VSegment2(e) for e in dcel_data_obj.edges]
+                dcel_data_obj.v_points = [VPoint2(v) for v in dcel_data_obj.points]
+                dcel_data_obj.v_segments = [VSegment2(e) for e in dcel_data_obj.v_segments]
             return dcel_data_obj
 
     def __repr__(self):

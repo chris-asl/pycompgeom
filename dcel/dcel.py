@@ -3,6 +3,9 @@
 __author__ = 'Chris Aslanoglou'
 from pycompgeom.visuals import *
 from dcel_gather_input import DcelInputData, similar_edges, segment_key_repr
+import pickle
+from time import time
+from datetime import datetime
 
 
 class HalfEdge(Segment2):
@@ -169,7 +172,11 @@ class DCEL:
         # Convert to points to dictionary from "x-coord,y-coord" -> Point2
         self.points_dict = dict((k, v) for k, v in [(point_key_repr(p), p) for p in dcel_input_data.points])
         self.segments = dcel_input_data.segments
+        # General flags
         self.is_connected_graph = dcel_input_data.is_connected_graph
+        self.use_visuals = dcel_input_data.use_visuals
+        self.debug = dcel_input_data.debug
+
         self.starting_segment = dcel_input_data.starting_segment
         self.min_x, self.min_y, self.max_x, self.max_y = dcel_input_data.min_x, dcel_input_data.min_y, dcel_input_data.max_x, \
                                                          dcel_input_data.max_y
@@ -194,9 +201,6 @@ class DCEL:
         self.half_edges_dict = {}  # (he.start, he.end) -> HE - This means only one representation for each HE pair
         # The following dict, helps for discarding an already created half-edge
         self.visited_inner_he_dict = {}  # (origin, twin.origin) -> HE
-        # General flags
-        self.use_visuals = dcel_input_data.use_visuals
-        self.debug = dcel_input_data.debug
         # Data members of DCEL
         self.vertices = []
         self.half_edges = []
@@ -324,14 +328,14 @@ class DCEL:
     def test_visual_he_relationships(self):
         """Iterate through all the faces, iterating through their HEs, and drawing each one with its prev/next"""
         for i, f in enumerate(self.faces):
-            if i == 0:
+            if i == 0 and self.debug:
                 print "Walking 1st face (BB)"
             face_he = f.walk_face()
             for he in face_he:
                 DCEL.draw_half_edge(he)
             face_inner_he = f.walk_inner_components()
             if face_inner_he is not None:
-                if i == 0:
+                if i == 0 and self.debug:
                     print "Walking inner components of 1st face"
                 for ic_pack in face_inner_he:
                     for he in ic_pack:
@@ -369,8 +373,6 @@ class DCEL:
         starting_he.set_previous(idx_he)
         # Add starting_he into the visited half-edges dictionary
         self.visited_inner_he_dict[he_key_repr(starting_he)] = starting_he
-        # DCEL.draw_half_edge(idx_he)
-        # DCEL.draw_half_edge(starting_he)
         return starting_edges_candidates
 
     def new_half_edge_handling(self, new_segment, origin, prev_he):
@@ -665,6 +667,28 @@ class DCEL:
             he = self.half_edges_dict.get(s_repr)
             return (he, he.twin, False) if he.origin == origin_v else (he.twin, he, False)
 
+    def pickle_dcel_data(self, filename=None):
+        if filename is None:
+            filename = "dcel_data-" + datetime.fromtimestamp(time()).strftime('%Y-%m-%d,%H:%M:%S') + ".bin"
+        with open(filename, 'wb') as output_file:
+            pickle.dump(self, output_file)
+
+    @staticmethod
+    def unpickle_dcel_data(filename, use_visuals):
+        """
+        Will restore the DCEL object that's been pickled
+        :param filename:
+        :param use_visuals:
+        :return:
+        """
+        with file(filename, 'rb') as input_file:
+            dcel_obj = pickle.load(input_file)
+            # Re-"paint" all the visual objects
+            if dcel_obj.use_visuals:
+                dcel_obj.v_points = [VPoint2(v) for v in dcel_obj.points]
+                dcel_obj.v_segments = [VSegment2(e) for e in dcel_obj.segments]
+            return dcel_obj
+
     @staticmethod
     def find_segments_with_max_angle(segments):
         """
@@ -814,16 +838,12 @@ if __name__ == '__main__':
     if len(sys.argv) == 1:
         dcel_data = DcelInputData(True, True)
         dcel_data.get_visual_dcel_members()
-        # dcel_data.pickle_dcel_data()
     else:
         dcel_data = DcelInputData(False, True)
         # dcel_data = DcelInputData.unpickle_dcel_data(sys.argv[1])
-        dcel_data.read_input_data_from_csv(sys.argv[1], False)
+        dcel_data.read_input_data_from_csv(sys.argv[1], True)
         # dcel_data.pickle_dcel_data(sys.argv[1].split('.')[0] + ".bin")
-    print "Done with DCELInputGather"
     dcel = DCEL(dcel_data)
     print dcel.faces
-    # print dcel.vertices
-    # print dcel.half_edges
     pause()
     del dcel_data
