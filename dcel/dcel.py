@@ -209,7 +209,6 @@ class DCEL:
 
     def __del__(self):
         del self.points
-        del self.points_dict
         del self.segments
         del self.v_points
         del self.v_segments
@@ -255,12 +254,19 @@ class DCEL:
             elif len(starting_he_list) == 0 and starting_he is None:
                 print "No half-edges to go on - Stopping algorithm"
                 break
-        # TODO
-        # Delete construction helper data members
+        # Validation methods
         self.test_half_edges_relationships()
         self.test_vertices_incident_edges()
         if self.use_visuals:
             self.test_visual_he_relationships()
+        del self.points_dict
+        del self.outer_segments_dict
+        del self.segments_dict
+        del self.outer_he_by_dest_dict
+        del self.outer_he_by_origin_dict
+        del self.vertices_dict
+        del self.half_edges_dict
+        del self.visited_inner_he_dict
         print "DCEL construction completed"
 
     # ##################################################
@@ -310,7 +316,8 @@ class DCEL:
             for he in self.half_edges:
                 dest_dict[point_key_repr(he.twin.origin)].append(he)
             for v in self.vertices:
-                test = VPoint2(v, MAGENTA)
+                if self.debug or self.use_visuals:
+                    test = VPoint2(v, MAGENTA)
                 incident_edges_list = dest_dict.get(point_key_repr(v))
                 if len(incident_edges_list) != len(v.incident_edges):
                     print v, "Erroneous number of incident half-edges\n" \
@@ -684,6 +691,7 @@ class DCEL:
         with file(filename, 'rb') as input_file:
             dcel_obj = pickle.load(input_file)
             # Re-"paint" all the visual objects
+            dcel_obj.use_visuals = use_visuals
             if dcel_obj.use_visuals:
                 dcel_obj.v_points = [VPoint2(v) for v in dcel_obj.points]
                 dcel_obj.v_segments = [VSegment2(e) for e in dcel_obj.segments]
@@ -836,14 +844,12 @@ def vectors_angle(v1, v2):
 
 if __name__ == '__main__':
     if len(sys.argv) == 1:
+        # No arguments, starting with visual input
         dcel_data = DcelInputData(True, True)
         dcel_data.get_visual_dcel_members()
-    else:
-        dcel_data = DcelInputData(False, True)
-        # dcel_data = DcelInputData.unpickle_dcel_data(sys.argv[1])
-        dcel_data.read_input_data_from_csv(sys.argv[1], True)
-        # dcel_data.pickle_dcel_data(sys.argv[1].split('.')[0] + ".bin")
+    else:  # Argument given, assuming it's csv, reading from file with use of visuals
+        dcel_data = DcelInputData(False, False)
+        dcel_data.read_input_data_from_csv(sys.argv[1], False)
     dcel = DCEL(dcel_data)
     print dcel.faces
     pause()
-    del dcel_data

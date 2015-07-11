@@ -565,6 +565,8 @@ class DcelInputData:
         self.bb_segments_number = 0
         self.points, self.v_points, self.segments, self.v_points = [], [], [], []
 
+        self.use_visuals = with_visuals
+
         points_dict = {}
         with open(filename, 'rb') as input_csv:
             reader = csv.reader(input_csv)
@@ -573,7 +575,7 @@ class DcelInputData:
                 x = int(first_row[0])
             except ValueError:
                 # Skipping csv header
-                print "Skipping csv header"
+                pass
             for row in reader:
                 self.convert_csv_row_to_data(row, points_dict, with_visuals)
         self.points = list(points_dict.values())
@@ -648,10 +650,11 @@ class DcelInputData:
             pickle.dump(self, output_file)
 
     @staticmethod
-    def unpickle_dcel_data(filename):
+    def unpickle_dcel_data(filename, use_visuals):
         with file(filename, 'rb') as input_file:
             dcel_data_obj = pickle.load(input_file)
             # Re-"paint" all the visual objects
+            dcel_data_obj.use_visuals = use_visuals
             if dcel_data_obj.use_visuals:
                 dcel_data_obj.v_points = [VPoint2(v) for v in dcel_data_obj.points]
                 dcel_data_obj.v_segments = [VSegment2(e) for e in dcel_data_obj.v_segments]
