@@ -166,6 +166,11 @@ def he_key_repr(he):
 
 class DCEL:
     def __init__(self, dcel_input_data):
+        """
+        Will create the DCEL from the input data
+
+        :param dcel_input_data: DcelInputData The input data provided by the DcelInputData class
+        """
         if not isinstance(dcel_input_data, DcelInputData):
             raise ValueError("DCEL - __init__: 1st argument: expected \"DcelInputData\", got \"",
                              type(dcel_input_data), "\"\n")
@@ -734,9 +739,9 @@ class DCEL:
         else:
             return False
 
-        # ##################################################
-        # Validation/ Testing methods
-        # ##################################################
+    # ##################################################
+    # Validation/ Testing methods
+    # ##################################################
 
     def test_half_edges_relationships(self):
         # Each half edge must have a next, a previous and a twin
@@ -816,9 +821,6 @@ class DCEL:
                         DCEL.draw_half_edge(he)
 
 
-# ##################################################
-
-
 # #########################################
 # General helper methods
 # #########################################
@@ -842,7 +844,7 @@ def vectors_angle(v1, v2):
         vector1 = (v1.start.x - v1.end.x, v1.start.y - v1.end.y)
         vector2 = (v2.start.x - v2.end.x, v2.start.y - v2.end.y)
     else:
-        raise ValueError("angle: vectors don't have a common point")
+        raise ValueError("vectors_angle: vectors don't have a common point")
     v1_v2_angle = math.acos(dot_product(vector1, vector2) / ((dot_product(vector1, vector1) ** 0.5) *
                                                              (dot_product(vector2, vector2) ** 0.5)))
     return v1_v2_angle

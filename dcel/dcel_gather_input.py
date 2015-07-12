@@ -126,7 +126,15 @@ def line(p1, p2):
 
 
 class DcelInputData:
-    def __init__(self, should_export_input_data, use_visuals, bb_dist=20, debug=False):
+    def __init__(self, should_export_input_data_as_csv, use_visuals, bb_dist=20, debug=False):
+        """
+
+        :param should_export_input_data_as_csv: True, if input data should be exported as a csv file. False, otherwise
+        :param use_visuals: True, if visual elements should be created (this would affect the visual elements of the
+                            DCEL class afterwards. False (would be faster), otherwise
+        :param bb_dist: int The distance to be added to the min/max{x/y} coordinates so as to create the BB vertices
+        :param debug: Boolean, if it's True, then some of the elements will be visualized
+        """
         self.points, self.segments, self.v_segments, self.v_points = [], [], [], []
         # The starting segment at the case of non-connected graph
         self.starting_segment = None
@@ -147,7 +155,7 @@ class DcelInputData:
         # Counter for the number of edges that were created from the addition of the BB
         # Not always 4 (case of connected graph)
         self.bb_segments_number = 0
-        self.should_export_input_data = should_export_input_data
+        self.should_export_input_data = should_export_input_data_as_csv
         self.use_visuals = use_visuals
         self.debug = debug
 
@@ -675,8 +683,6 @@ if __name__ == '__main__':
     else:
         dcel_data.read_input_data_from_csv(sys.argv[1], True)
     print dcel_data
-    # dcel_data.add_bounding_box_elements()
     # dcel_test = DcelInputData.unpickle_dcel_data("dcel_input_data-2015-07-10,19:20:51.bin")
     # print dcel_test
     pause()
-    del dcel_data
